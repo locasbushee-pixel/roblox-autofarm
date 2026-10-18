@@ -1,0 +1,455 @@
+-- ====================================================================
+--   RAVEN MILITARY - NPC PATHFINDING + WATCHDOG UNSTUCK v1.3
+-- ====================================================================
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local PathfindingService = game:GetService("PathfindingService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local lp = Players.LocalPlayer
+
+-- تدمير أي نسخة سابقة
+if _G.RavenFarmUI then
+    pcall(function() _G.RavenFarmUI:Destroy() end)
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "RavenFarmUI"
+ScreenGui.ResetOnSpawn = false
+_G.RavenFarmUI = ScreenGui
+
+if syn and syn.protect_gui then
+    syn.protect_gui(ScreenGui)
+    ScreenGui.Parent = game:GetService("CoreGui")
+elseif gethui then
+    ScreenGui.Parent = gethui()
+else
+    ScreenGui.Parent = lp:WaitForChild("PlayerGui")
+end
+
+-- الإطار الرئيسي
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 560, 0, 440)
+MainFrame.Position = UDim2.new(0.5, -280, 0.5, -220)
+MainFrame.BackgroundColor3 = Color3.fromRGB(15, 17, 24)
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = MainFrame
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Color = Color3.fromRGB(0, 230, 180)
+UIStroke.Thickness = 1.5
+UIStroke.Parent = MainFrame
+
+-- شريط العنوان
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 42)
+TitleBar.BackgroundColor3 = Color3.fromRGB(20, 25, 36)
+TitleBar.BorderSizePixel = 0
+TitleBar.Parent = MainFrame
+
+local TitleLabel = Instance.new("TextLabel")
+TitleLabel.Size = UDim2.new(1, -60, 1, 0)
+TitleLabel.Position = UDim2.new(0, 15, 0, 0)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Font = Enum.Font.GothamBold
+TitleLabel.Text = "🛡️ فارم ريفن الذكي بمحرك فك التعليق (Watchdog Unstuck v1.3)"
+TitleLabel.TextColor3 = Color3.fromRGB(0, 255, 190)
+TitleLabel.TextSize = 13
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = TitleBar
+
+local CloseBtn = Instance.new("TextButton")
+CloseBtn.Size = UDim2.new(0, 30, 0, 30)
+CloseBtn.Position = UDim2.new(1, -36, 0, 6)
+CloseBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 60)
+CloseBtn.Font = Enum.Font.GothamBold
+CloseBtn.Text = "✕"
+CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseBtn.TextSize = 13
+CloseBtn.Parent = TitleBar
+local CloseCorner = Instance.new("UICorner")
+CloseCorner.CornerRadius = UDim.new(0, 6)
+CloseCorner.Parent = CloseBtn
+CloseBtn.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+
+-- شريط الإحصائيات
+local StatsBar = Instance.new("Frame")
+StatsBar.Size = UDim2.new(1, -20, 0, 32)
+StatsBar.Position = UDim2.new(0, 10, 0, 48)
+StatsBar.BackgroundColor3 = Color3.fromRGB(25, 32, 46)
+StatsBar.BorderSizePixel = 0
+StatsBar.Parent = MainFrame
+local StatsCorner = Instance.new("UICorner")
+StatsCorner.CornerRadius = UDim.new(0, 6)
+StatsCorner.Parent = StatsBar
+
+local StatusText = Instance.new("TextLabel")
+StatusText.Size = UDim2.new(0.6, 0, 1, 0)
+StatusText.Position = UDim2.new(0, 10, 0, 0)
+StatusText.BackgroundTransparency = 1
+StatusText.Font = Enum.Font.Code
+StatusText.Text = "الحالة: متوقف ⏸️"
+StatusText.TextColor3 = Color3.fromRGB(255, 200, 100)
+StatusText.TextSize = 12
+StatusText.TextXAlignment = Enum.TextXAlignment.Left
+StatusText.Parent = StatsBar
+
+local PointsText = Instance.new("TextLabel")
+PointsText.Size = UDim2.new(0.38, 0, 1, 0)
+PointsText.Position = UDim2.new(0.6, 0, 0, 0)
+PointsText.BackgroundTransparency = 1
+PointsText.Font = Enum.Font.GothamBold
+PointsText.Text = "النقاط المكتسبة: +0"
+PointsText.TextColor3 = Color3.fromRGB(0, 255, 150)
+PointsText.TextSize = 12
+PointsText.TextXAlignment = Enum.TextXAlignment.Right
+PointsText.Parent = StatsBar
+
+-- شاشة السجل (Log)
+local LogBox = Instance.new("ScrollingFrame")
+LogBox.Size = UDim2.new(1, -20, 1, -150)
+LogBox.Position = UDim2.new(0, 10, 0, 86)
+LogBox.BackgroundColor3 = Color3.fromRGB(10, 12, 18)
+LogBox.BorderSizePixel = 0
+LogBox.ScrollBarThickness = 5
+LogBox.ScrollBarImageColor3 = Color3.fromRGB(0, 230, 180)
+LogBox.Parent = MainFrame
+
+local LogCorner = Instance.new("UICorner")
+LogCorner.CornerRadius = UDim.new(0, 6)
+LogCorner.Parent = LogBox
+
+local LogText = Instance.new("TextBox")
+LogText.Size = UDim2.new(1, -16, 1, 0)
+LogText.Position = UDim2.new(0, 8, 0, 0)
+LogText.BackgroundTransparency = 1
+LogText.ClearTextOnFocus = false
+LogText.MultiLine = true
+LogText.TextEditable = false
+LogText.Font = Enum.Font.Code
+LogText.TextColor3 = Color3.fromRGB(210, 230, 245)
+LogText.TextSize = 11
+LogText.TextXAlignment = Enum.TextXAlignment.Left
+LogText.TextYAlignment = Enum.TextYAlignment.Top
+LogText.Text = "المحرك المصفح جاهز للعمل وفك أي تعليق تلقائياً..."
+LogText.Parent = LogBox
+
+-- أزرار التحكم
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 260, 0, 42)
+ToggleBtn.Position = UDim2.new(0, 10, 1, -50)
+ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+ToggleBtn.Font = Enum.Font.GothamBold
+ToggleBtn.Text = "▶️ بدء الفارم الذكي"
+ToggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleBtn.TextSize = 13
+ToggleBtn.Parent = MainFrame
+local tCorner = Instance.new("UICorner")
+tCorner.CornerRadius = UDim.new(0, 6)
+tCorner.Parent = ToggleBtn
+
+local CopyBtn = Instance.new("TextButton")
+CopyBtn.Size = UDim2.new(0, 130, 0, 42)
+CopyBtn.Position = UDim2.new(0, 280, 1, -50)
+CopyBtn.BackgroundColor3 = Color3.fromRGB(0, 140, 220)
+CopyBtn.Font = Enum.Font.GothamBold
+CopyBtn.Text = "📋 نسخ السجل"
+CopyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+CopyBtn.TextSize = 13
+CopyBtn.Parent = MainFrame
+local cpCorner = Instance.new("UICorner")
+cpCorner.CornerRadius = UDim.new(0, 6)
+cpCorner.Parent = CopyBtn
+
+local ClearBtn = Instance.new("TextButton")
+ClearBtn.Size = UDim2.new(0, 130, 0, 42)
+ClearBtn.Position = UDim2.new(0, 420, 1, -50)
+ClearBtn.BackgroundColor3 = Color3.fromRGB(60, 65, 80)
+ClearBtn.Font = Enum.Font.GothamBold
+ClearBtn.Text = "🗑️ مسح"
+ClearBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+ClearBtn.TextSize = 13
+ClearBtn.Parent = MainFrame
+local clCorner = Instance.new("UICorner")
+clCorner.CornerRadius = UDim.new(0, 6)
+clCorner.Parent = ClearBtn
+
+-- تحريك النافذة
+local dragging, dragStart, startPos
+TitleBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input.UserInputType == Enum.UserInputType.MouseMovement then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+UserInputService.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then dragging = false end
+end)
+
+-- نظام السجل
+local logs = {}
+local function addLog(msg)
+    local line = string.format("[%s] %s", os.date("%H:%M:%S"), msg)
+    table.insert(logs, line)
+    LogText.Text = table.concat(logs, "\n")
+    local _, count = string.gsub(LogText.Text, "\n", "")
+    LogBox.CanvasSize = UDim2.new(0, 0, 0, (count + 2) * 15)
+    LogBox.CanvasPosition = Vector2.new(0, (count + 2) * 15)
+end
+
+CopyBtn.MouseButton1Click:Connect(function()
+    if setclipboard then
+        setclipboard(LogText.Text)
+        CopyBtn.Text = "✅ تم النسخ!"
+        task.delay(1.5, function() CopyBtn.Text = "📋 نسخ السجل" end)
+    end
+end)
+
+ClearBtn.MouseButton1Click:Connect(function()
+    table.clear(logs)
+    LogText.Text = ""
+    LogBox.CanvasSize = UDim2.new(0, 0, 0, 0)
+end)
+
+-- ====================================================================
+--   محرك المشي الطبيعي وفك التعليق (PATHFINDING + UNSTUCK WATCHDOG)
+-- ====================================================================
+local isRunning = false
+local START_POS = Vector3.new(-36.28, 74.17, -3082.30)
+local startingPoints = 0
+local gainedPoints = 0
+
+-- متابعة النقاط
+task.spawn(function()
+    local leaderstats = lp:WaitForChild("leaderstats", 5)
+    if leaderstats then
+        for _, val in ipairs(leaderstats:GetChildren()) do
+            if string.find(val.Name, "نقا") or val.Name:lower():find("point") then
+                startingPoints = val.Value
+                val.Changed:Connect(function(newVal)
+                    gainedPoints = newVal - startingPoints
+                    PointsText.Text = "النقاط المكتسبة: +" .. tostring(gainedPoints)
+                end)
+                break
+            end
+        end
+    end
+end)
+
+-- دالة المشي كـ NPC مع نظام فك التعليق الذكي
+local function walkToTarget(destination)
+    local char = lp.Character
+    if not char then return false end
+    local hum = char:FindFirstChild("Humanoid")
+    local root = char:FindFirstChild("HumanoidRootPart")
+    if not hum or not root then return false end
+
+    -- إعداد مسار آمن يتفادى العوائق ويسمح بالقفز
+    local path = PathfindingService:CreatePath({
+        AgentRadius = 2.5,
+        AgentHeight = 5.0,
+        AgentCanJump = true,
+        AgentCanClimb = true,
+        WaypointSpacing = 4.0
+    })
+
+    local success = pcall(function()
+        path:ComputeAsync(root.Position, destination)
+    end)
+
+    if not success or path.Status ~= Enum.PathStatus.Success then
+        -- إذا لم يجد مسار، يمشي للأمام مع مراقبة المسافة
+        hum:MoveTo(destination)
+        local t = tick()
+        while isRunning and (tick() - t < 4) do
+            if (root.Position - destination).Magnitude <= 4 then break end
+            task.wait(0.1)
+        end
+        return true
+    end
+
+    local waypoints = path:GetWaypoints()
+    for i, wp in ipairs(waypoints) do
+        if not isRunning then break end
+
+        if wp.Action == Enum.PathWaypointAction.Jump then
+            hum.Jump = true
+        end
+
+        hum:MoveTo(wp.Position)
+
+        -- 🛡️ نظام المراقبة وفك التعليق (Watchdog)
+        local moveStart = tick()
+        local lastPos = root.Position
+        
+        while isRunning do
+            local currentDist = (root.Position - wp.Position).Magnitude
+            if currentDist <= 3.5 then
+                break
+            end
+
+            -- فحص هل الشخصية متوقفة في مكانها (علق بعمود/تيل/جدار)
+            if tick() - moveStart > 1.8 then
+                local moved = (root.Position - lastPos).Magnitude
+                if moved < 1.0 then
+                    addLog("⚠️ رصد تعليق بعائق! جاري فك التعليق والقفز...")
+                    hum.Jump = true
+                    
+                    -- إعطاء دفعة للأمام لتخطي العمود (Micro-Bypass)
+                    local dir = (destination - root.Position).Unit
+                    root.CFrame = root.CFrame + Vector3.new(dir.X * 3.5, 1.2, dir.Z * 3.5)
+                    task.wait(0.2)
+                    break
+                end
+                lastPos = root.Position
+                moveStart = tick()
+            end
+            task.wait(0.05)
+        end
+    end
+    return true
+end
+
+-- دالة الضغط على زر [E]
+local function triggerChestPrompt()
+    local prompt = nil
+    local starter = Workspace:FindFirstChild("DeliveryCrates") 
+        and Workspace.DeliveryCrates:FindFirstChild("CratesStarter")
+        and Workspace.DeliveryCrates.CratesStarter:FindFirstChild("TakeChest")
+    
+    if starter then
+        prompt = starter:FindFirstChildWhichIsA("ProximityPrompt")
+    end
+
+    if not prompt then
+        for _, p in ipairs(Workspace:GetDescendants()) do
+            if p:IsA("ProximityPrompt") and (p.ActionText:find("صندوق") or p.ActionText:find("اخذ") or (p.Parent and p.Parent.Name == "TakeChest")) then
+                prompt = p
+                break
+            end
+        end
+    end
+
+    if prompt then
+        if fireproximityprompt then
+            fireproximityprompt(prompt, 0)
+            fireproximityprompt(prompt, 1)
+            fireproximityprompt(prompt)
+        end
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            task.wait(0.1)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        end)
+        return true
+    end
+    return false
+end
+
+-- البحث عن الهدف النشط
+local function findDeliveryTarget()
+    local char = lp.Character
+    local dcFolder = Workspace:FindFirstChild("DeliveryCrates")
+    if dcFolder then
+        for _, child in ipairs(dcFolder:GetDescendants()) do
+            if child:IsA("BasePart") and child.Name ~= "CratesStarter" and not child:IsDescendantOf(char) then
+                if child.Transparency < 1 and (child.Position - START_POS).Magnitude > 25 then
+                    return child.Position, child
+                end
+            end
+        end
+    end
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if (obj:IsA("Beam") or obj:IsA("Highlight") or obj:IsA("BillboardGui")) and not obj:IsDescendantOf(char) then
+            local part = obj.Parent
+            if part and part:IsA("BasePart") and (part.Position - START_POS).Magnitude > 25 then
+                return part.Position, part
+            end
+        end
+    end
+
+    return Vector3.new(-388.96, 73.00, -2665.44), nil
+end
+
+-- دورة الفارم المستمرة
+local function runFarmCycle()
+    task.spawn(function()
+        while isRunning do
+            local char = lp.Character
+            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local hum = char and char:FindFirstChild("Humanoid")
+            if not root or not hum then task.wait(1) continue end
+
+            -- 1. المشي لنقطة الصناديق
+            StatusText.Text = "الحالة: 🚶 مشي نحو نقطة الصناديق..."
+            addLog("المشي نحو TakeChest...")
+            walkToTarget(START_POS)
+            task.wait(0.3)
+
+            -- 2. أخذ الصندوق
+            StatusText.Text = "الحالة: ✋ استلام الصندوق [E]..."
+            triggerChestPrompt()
+            task.wait(0.6)
+
+            -- 3. تحديد نقطة التسليم
+            StatusText.Text = "الحالة: 🔍 رصد موقع التسليم..."
+            local targetPos, targetPart = findDeliveryTarget()
+            addLog(string.format("هدف التسليم: Vector3.new(%.1f, %.1f, %.1f)", targetPos.X, targetPos.Y, targetPos.Z))
+
+            -- 4. المشي نحو نقطة التسليم مع فك التعليق
+            StatusText.Text = "الحالة: 🚚 التوجه لتسليم الصندوق..."
+            walkToTarget(targetPos)
+            task.wait(0.4)
+
+            -- لمس النقطة
+            if targetPart and firetouchinterest and root then
+                firetouchinterest(root, targetPart, 0)
+                task.wait(0.1)
+                firetouchinterest(root, targetPart, 1)
+            end
+
+            addLog("تم الوصول والتسليم! الدورة التالية بعد ثانية...")
+            task.wait(1.5)
+        end
+    end)
+end
+
+-- زر التشغيل والإيقاف
+ToggleBtn.MouseButton1Click:Connect(function()
+    isRunning = not isRunning
+    if isRunning then
+        ToggleBtn.Text = "⏹️ إيقاف الفارم"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(220, 50, 50)
+        StatusText.Text = "الحالة: 🟢 الفارم والمشي قيد التشغيل..."
+        StatusText.TextColor3 = Color3.fromRGB(0, 255, 150)
+        addLog("=== تم بدء تشغيل الفارم الذكي v1.3 ===")
+        runFarmCycle()
+    else
+        ToggleBtn.Text = "▶️ بدء الفارم الذكي"
+        ToggleBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 120)
+        StatusText.Text = "الحالة: متوقف ⏸️"
+        StatusText.TextColor3 = Color3.fromRGB(255, 200, 100)
+        addLog("=== تم إيقاف الفارم ===")
+        local char = lp.Character
+        if char and char:FindFirstChild("Humanoid") then
+            char.Humanoid:MoveTo(char.HumanoidRootPart.Position)
+        end
+    end
+end)
