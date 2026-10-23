@@ -1,5 +1,5 @@
 -- ============================================================
--- 👑 AUTOFARM v7.1h (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
+-- 👑 AUTOFARM v7.1i (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
 -- ════════════════════════════════════════════════════════════
 -- [الإصلاحات الجوهرية]
 --   [1] كشف الصندوق: اسم موجب + تعلّم ذاتي (يصلح "ما يكشف دروبات")
@@ -62,6 +62,19 @@
 --  [28] الكهف ما يبلّع الدروب: busyCyber كان يوقف الدروب وضغطة E 45 ثانية كاملة.
 --       الحين ضغطة E للالتقاط شغالة طول الوقت، وإذا النقاط ما نزلت 12 ثانية ودروب
 --       حاضر نلحقه (zDROP-atPoint)، وبعد 22 ثانية بلا تقدم نطلع من الكهف (zCAVE bail).
+-- ════════════════════════════════════════════════════════════
+-- ── v7.1i (الدروب: zPk=0 + التسليم كان يبلّع الدروب) ────────
+--  [29] تصنيف برومبت الالتقاط: البرومبت يُضاف للـtree قبل ما اللعبة تكتب نصه، والتصنيف
+--       كان يُحفظ مرة وحدة للأبد = zPk=0 مع «التقاط العناصر» ظاهر على الشاشة = لا
+--       اكتشاف ولا E. الحين إعادة فحص كل 1.5 ثانية للبرومبتات القريبة (150م) فقط،
+--       مع تصحيح المضيف اللي ما كان متعوّد وقت الإضافة، وتنظيف الكاش نفسه.
+--  [30] التسليم كان يتجاهل الدروب كليًا (hasCrate أو isPickup=false → continue) =
+--       15-20 ثانية تأخير والدروب يروّح. الحين: دروب في مدى البرومبت نلحقه فورًا
+--       ونكمل التسليم بنفس الصندوق، والبعيد ما يقطع التسليم (zDROP skip zNear=0).
+--  [31] requestDrop ما يلغي «المهمة شغالة» واحنا شايلين صندوق — كان يخلي الحارس يعيد
+--       بدء المهمة ويضيّع تقدّم التسليم.
+--  [32] الكويز: إعادة نفس المعادلة كانت تنتظر 2.5 ثانية → 1.2. وضغطة E الدورية صارت
+--       تفتح برومبت «السحب» (HoldDuration) بـ InputHold بدل ضغطة قصيرة ما تفتح شي.
 -- ════════════════════════════════════════════════════════════
 
 if _G.__FINAL_STOP then pcall(_G.__FINAL_STOP) end
@@ -231,7 +244,7 @@ local function addLog(s)
   logBuf[#logBuf+1]=("[%s] %s"):format(os.date("%H:%M:%S"),s)
   if #logBuf>60 then table.remove(logBuf,1) end
   ST.logDirty = true
-  print("[v7.1h]",s)
+  print("[v7.1i]",s)
 end
 task.spawn(function()
   while not _G.StopAutoFarm do
@@ -279,7 +292,7 @@ local function shutdown()
     pcall(function() cam.FieldOfView=70 end)
     for _,n in ipairs({"FinalFixGui","FinalFixMobileBtn","MobileFlyGui","WeatherAutoGui"}) do local g=pg:FindFirstChild(n); if g then g:Destroy() end end
   end)
-  print("[v7.1h] Stopped")
+  print("[v7.1i] Stopped")
 end
 _G.__FINAL_STOP=shutdown
 
@@ -695,13 +708,12 @@ function PICK.onChar(p)
   if m and m:FindFirstChildWhichIsA("Humanoid") then return true end
   return false
 end
--- نص البرومبت يُفحص مرة عند الإضافة ويُخزَّن — كنس النصوص كل فريم هو سبب تعليق الموبايل
+-- نص البرومبت يُفحص عند الإضافة ويُخزَّن — كنس النصوص كل فريم هو سبب تعليق الموبايل
 function PICK.classify(e)
-  if e.pk == nil then
-    e.k = PICK.text(e.p)
-    e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(e.k)
-  end
-  if e.pk then PICK.set[e.p] = e end
+  local txt = PICK.text(e.p)
+  e.k = txt
+  e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(txt)
+  if e.pk then PICK.set[e.p] = e else PICK.set[e.p] = nil end
   return e.pk
 end
 function PICK.host(e)
@@ -709,17 +721,21 @@ function PICK.host(e)
   if not host or not host.Parent then host = promptHost(e.p); e.h = host end
   return host
 end
--- مسح محدود (400 كاشة كل 3 ثوانٍ) للبرومبتات اللي نصها تغيّر بعد ما صُنّفت
-function PICK.rescan()
-  local n = 0
+-- v7.1h: البرومبت يُضاف للـtree قبل ما اللعبة تكتب نصه — التصنيف عند الإضافة كان يبقى
+-- «مو التقاط» للأبد، وكان المسح يصير فقط إذا PICK.set فاضي = دليل zPk=0 مع «التقاط
+-- العناصر» ظاهر. الحين: إعادة فحص كل 1.5 ثانية للبرومبتات القريبة فقط (150 متر)،
+-- وتصحيح المضيف اللي ما كان متعوّد وقت الإضافة.
+function PICK.rescan(fromPos)
   for _, e in pairs(promptSet) do
-    if n >= 400 then break end
-    n = n + 1
-    local txt = PICK.text(e.p)
-    if e.k ~= txt then
-      e.k = txt; e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(txt)
+    local host = PICK.host(e)
+    if host and (not fromPos or (host.Position - fromPos).Magnitude < 150) then
+      local txt = PICK.text(e.p)
+      if e.k ~= txt then
+        e.k = txt
+        e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(txt)
+      end
     end
-    if e.pk then PICK.set[e.p] = e end
+    if e.pk then PICK.set[e.p] = e else PICK.set[e.p] = nil end
   end
 end
 function PICK.near(radius, fromPos)
@@ -727,7 +743,7 @@ function PICK.near(radius, fromPos)
   local r = fromPos or (hrp() and hrp().Position)
   if not r then return out end
   radius = radius or CFG.DROP_PR_RADIUS
-  if next(PICK.set) == nil and tick() - PICK.at > 3 then PICK.at = tick(); PICK.rescan() end
+  if tick() - PICK.at > 1.5 then PICK.at = tick(); PICK.rescan(r) end
   for _, e in pairs(PICK.set) do
     local p = e.p
     if p.Parent then
@@ -748,9 +764,9 @@ end
 
 -- الكائن اللي يمسك برومبت الالتقاط = دروب. نستثني صناديق المهمة (اسم الجزء أو الموديل)
 -- حتى ما نقاطع التسليم، ونستثني مرحلة التسليم كلها.
-function PICK.dropHit()
+function PICK.dropHit(ignoreMission)
   if not ST.autoDrop then return nil end
-  if ST.missionOn and ST.isPickup == false then return nil end
+  if not ignoreMission and ST.missionOn and ST.isPickup == false then return nil end
   local now = tick()
   for _, e in ipairs(PICK.near(CFG.DROP_PR_RADIUS)) do
     local part = e.part
@@ -824,13 +840,18 @@ task.spawn(function()
       if not ST.busyDrop and not ST.spectating then
         local r = hrp()
         if r and alive() then
-          local press = false
+          local press, pr = false, nil
           for _, e in ipairs(activePrompts(14, true)) do
             local txt = PICK.text(e.prompt)
-            if PICK.blocked(txt) then press = false break end
-            if not PICK.onChar(e.prompt) and PICK.isPickup(txt) then press = true end
+            if PICK.blocked(txt) then press = false pr = nil break end
+            if not PICK.onChar(e.prompt) and PICK.isPickup(txt) then press = true pr = e.prompt end
           end
-          if press then pressE(0.16) end
+          -- البرومبت اللي يحتاج «سحب» ما تفتحه ضغطة قصيرة — هذا كان يفسّر «ضغط E وما صار شي»
+          if press then
+            local hd = 0
+            pcall(function() hd = pr.HoldDuration or 0 end)
+            if hd > 0.05 then activatePrompt(pr, true, hd + 0.45) else pressE(0.16) end
+          end
         end
       end
     end
@@ -1740,8 +1761,9 @@ local function solveQuizPass(isSecret, isBox)
   if raw == "" then raw = quez and cleanText(quez.Text or "") or "" end
   if raw == "" and s.joined then raw = cleanText(s.joined) end
   if raw == "" then return false end
-  -- v7.1d: المعادلة نفسها ما تنرفض للأبد — لو النافذة لسه ظاهرة نعاود بعد 2.5 ثانية
-  if raw == ST.lastEq and (tick() - (ST.quizTriedAt or 0) < 2.5) then return false end
+  -- v7.1h: كان ينتظر 2.5 ثانية قبل إعادة نفس المعادلة — لو أول محاولة ما ضغطت «تأكيد»
+  -- صح تضيع ثانيتين ونص من نافذة الـ15. 1.2 ثانية تكفي للسيرفر يرد.
+  if raw == ST.lastEq and (tick() - (ST.quizTriedAt or 0) < 1.2) then return false end
   ST.lastEq = raw; ST.quizTriedAt = tick()
   local ans = parseEq(raw)
   if not ans then local ok, v = pcall(solveStr, raw); if ok and v then ans = v end end
@@ -1928,7 +1950,9 @@ requestDrop = function(obj, kind, why)
   dropSeen[obj] = tick()
   ST.dropQueued = obj; ST.dropQueueKind = kind or classifyDrop(obj)
   ST.dropRequested = true
-  ST.inProgress = false; ST.progressStart = nil
+  -- واحنا شايلين صندوق ما نلغي «المهمة شغالة» — الحارس كان يعيد بدء مهمة والتسليم
+  -- باقٍ، فيضيع التقدم. نلحق الدروب وبعده نكمّل التسليم بنفس الصندوق.
+  if not hasCrate() then ST.inProgress = false; ST.progressStart = nil end
   if why then addLog(("⚡ دروب (%s): %s"):format(why, tostring(obj.Name))) end
 end
 
@@ -1962,13 +1986,17 @@ task.spawn(function()
         end
       end)
     end
-    -- ما نقاطع مرحلة التسليم — كان يمسح المهمة ويخليك واقف
-    if ST.missionOn and ST.isPickup == false then continue end
-    if hasCrate() then
-      if tick() - lastDropScanLog > 30 then
+    -- v7.1h: أثناء التسليم كنا نتجاهل الدروب بالكامل = 15-20 ثانية تأخير والدروب يروّح.
+    -- الحين: إذا برومبت الالتقاط في المدى نلحقه — النقللة فوق الدروب ما ترمي الصندوق،
+    -- وبعدها نكمل التسليم. الدروب البعيد ما يقطع التسليم.
+    if (ST.missionOn and ST.isPickup == false) or hasCrate() then
+      local nd = PICK.dropHit(true)
+      if nd then
+        requestDrop(nd, classifyDrop(nd), "قريب أثناء التسليم")
+      elseif tick() - lastDropScanLog > 30 then
         lastDropScanLog = tick()
         local cr = getCrate(); cr = cr and cr.Name or "?"
-        addLog(("zDROP skip: crate=%s"):format(cr))
+        addLog(("zDROP skip: crate=%s zNear=0"):format(cr))
       end
       continue
     end
@@ -3817,7 +3845,7 @@ local function buildGui()
   mkFlyBtn("↑", 80, -200, "W"); mkFlyBtn("↓", 80, -120, "S"); mkFlyBtn("←", 20, -160, "A"); mkFlyBtn("→", 140, -160, "D"); mkFlyBtn("⬆", 300, -200, "Up"); mkFlyBtn("", 300, -120, "Down")
   local floatBtn = Instance.new("TextButton", mobGui); floatBtn.Size = UDim2.new(0, 54, 0, 54); floatBtn.Position = UDim2.new(0, 14, 0.45, 0)
   floatBtn.BackgroundColor3 = Color3.fromRGB(14, 24, 38); floatBtn.BackgroundTransparency = 0.15
-  floatBtn.Text = "v7.1h"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
+  floatBtn.Text = "v7.1i"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
   floatBtn.Font = Enum.Font.GothamBold; floatBtn.Active = true; floatBtn.Draggable = true
   Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
   local fStroke = Instance.new("UIStroke", floatBtn); fStroke.Thickness = 1.5; fStroke.Transparency = 0.15
@@ -3843,10 +3871,10 @@ local function buildGui()
   Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
   grad(header, Color3.fromRGB(22, 31, 50), Color3.fromRGB(13, 18, 30), 0)
   local title = Instance.new("TextLabel", header); title.Size = UDim2.new(1, -230, 0, 22); title.Position = UDim2.new(0, 16, 0, 7)
-  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1h"; title.TextColor3 = P.text
+  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1i"; title.TextColor3 = P.text
   title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
   local subtitle = Instance.new("TextLabel", header); subtitle.Size = UDim2.new(1, -230, 0, 14); subtitle.Position = UDim2.new(0, 16, 0, 26)
-  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Cave Floor Lock • Random 10-15m Unstuck • Forced TP • E every 3s • 150s CD"; subtitle.TextColor3 = P.muted
+  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Drop Prompt Lock • Cave Floor Lock • Random 10-15m Unstuck • Forced TP • E every 3s"; subtitle.TextColor3 = P.muted
   subtitle.Font = Enum.Font.Gotham; subtitle.TextSize = 9; subtitle.TextXAlignment = Enum.TextXAlignment.Left
   local helpBtn = Instance.new("TextButton", header); helpBtn.Size = UDim2.new(0, 28, 0, 28); helpBtn.Position = UDim2.new(1, -206, 0, 9)
   helpBtn.BackgroundColor3 = P.row; helpBtn.BackgroundTransparency = 0.15; helpBtn.Text = "؟"
@@ -4466,7 +4494,7 @@ task.spawn(function() while not _G.StopAutoFarm do
   updateStats()
 end end)
 
-addLog("AUTOFARM v7.1h جاهز 👑")
+addLog("AUTOFARM v7.1i جاهز 👑")
 addLog("✅ كول داون: 150 ثانية (دقيقتين ونص) بعد كل مهمة — بلا بدء مبكر وبلا لخبطة مشي")
 addLog("✅ النقلة الذكية: 10 أمتار للأمام على المسار عند أول تعليق (كانت انتقال كامل للوجهة)")
 addLog("✅ الكهف: مشي فقط + الـ50 تُحسب مرة وحدة لكل فتحة باب (ما يعلق قدام الباب المفتوح)")
@@ -4480,4 +4508,4 @@ addLog("📋 تشخيص: zMISSION zCD zHOP zESC zFORCE zRND zDROP zQUIZ zCAVE zT
 addLog("جرّب: زر «📦 تجربة الدروب الآن» يطلّع zDROP فورًا")
 addLog("Home = إخفاء/إظهار | End = إيقاف")
 updateStats()
-print("[v7.1h] Ready — cave walks to the FLOOR (Y checked, never the roof above the opening), random 6-15m unstuck hop (zRND) when stuck, hops allowed inside the cave ring (crossing into it is still walk-only), cave bails after 22s of no progress (zCAVE bail) so drops/E keep working, E press for pickup prompts every 3s even during a cave visit, 150s mission cooldown, forced teleport to destination (zFORCE), prompt-based drop pickup, mobile-friendly caches")
+print("[v7.1i] Ready — pickup prompts are re-classified every 1.5s near the player (fixes zPk=0 while 'التقاط العناصر' is on screen), drops are grabbed while carrying/delivering a mission crate (near drop only, delivery still finishes with the same crate), hold-style prompts open via InputHold, same-equation quiz retry 2.5s→1.2s, cave walks to the FLOOR (Y checked) and bails after 22s of no progress, random 6-15m unstuck hop (zRND), forced teleport to destination (zFORCE), E every 3s, 150s mission cooldown, mobile-friendly caches")
