@@ -1,5 +1,5 @@
 -- ============================================================
--- 👑 AUTOFARM v7.1 (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
+-- 👑 AUTOFARM v7.1h (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
 -- ════════════════════════════════════════════════════════════
 -- [الإصلاحات الجوهرية]
 --   [1] كشف الصندوق: اسم موجب + تعلّم ذاتي (يصلح "ما يكشف دروبات")
@@ -18,6 +18,50 @@
 --       الباب 387,8,-589) — الوقوف السابق كان على Door/Win الشفاف فيغوص ويموت
 --  [11] الكهف: دخول من فتحة الباب على أرض صلبة + رفض الزجاج + انسحاب فوري
 --       عند نزول الصحة + ما يسوي ريستارت النقاط إلا بعد دخول مؤكد
+-- ── v7.1f (الشكل العام — 4 مشاكل) ──────────────────────────
+--  [12] الكول داون: 150 ثانية (دقيقتين ونص) بعد كل مهمة (markMissionEnd + setCdAt) — السيرفر
+--       كان يقفل اللوحة 180 ثانية، والقديم كان يرجع لها كل دورة = لخبطة مشي وبدء مبكر
+--  [13] الطوارئ: سُلّم تصعيد — 0.55s تعليق = smartHop (10 أمتار على المسار)، 5.5s بلا
+--       تقدم فعلي = fastEscape (انتقال سريع لبقعة حرة باتجاه الوجهة)، 13s = إعادة تخطيط.
+--       التقدم صار يُقاس بالمسافة للوجهة، مو بحركة الشخصية (الانزلاق كان يصفّر المؤقّت)
+--  [14] الانحباس: trappedHere (سقف + 3 جهات مسدودة) يطلّعه من غرفة السيبراني أو أي
+--       مكان مسكّر — حتى وهو واقف بلا مشي. الكهف يبقى «مشي فقط» للاقتراب.
+--  [15] الكهف: الـ50 نقاط تُحسب مرة وحدة لكل فتحة باب (من leaderstats.Points) —
+--       ما يروح للباب المفتوح بعد ما أخذ النقاط، وفتحة جديدة = محاولة جديدة
+--  [16] الكهف: مشي فقط — بلا DROP داخل مسار الكهف، بلا ري-باث عند نقطة الـ50،
+--       ري كاست قصير يوقف السناب على السطح، ومنطقة محرّمة على النقلة حول الكهف
+--  [17] الموبايل: إيقاف الكنسات كل فريم — تتبع TextBox بالأحداث بدل كنس CoreGui،
+--       كاش سلبية الدروب، لوج مجمّع، برومبتات من كاش، وحدود زمنية للحماية/الـ Heartbeat
+-- ── v7.1g (قبل النشر — دروب + انتقال إجباري) ────────────────
+--  [18] الدروب: اكتشاف عن طريق برومبت «التقاط العناصر» نفسه — الإثبات من شاشته كان
+--       zDROP scan: Drops=0 وهو واقف فوق الـ Airdrop = الصندوق مو تحت workspace.Drops.
+--       صناديق المهمة (اسم الجزء/الموديل) مستثنية حتى ما نقاطع التسليم.
+--  [19] الدروب: نافذة فتح 11 ثانية بدل 7، وقوف إجباري فوق الدروب كل محاولة إذا طار
+--       خارج مداه، والبحث عن برومبت الالتقاط يكون حول الدروب مو حول اللاعب فقط.
+--       التشخيص صار zLive/zPk/zPr/zSet.
+--  [20] E مستمر: ضغطة زر حقيقية كل 3 ثوانٍ (حتى ما يبين معلق) — تتوقف عن أي برومبت
+--       ممنوع (متجر/إلغاء/طقس/تصفيد)، ووقت handleDrop، ووقت الإيقاف العام.
+--  [21] انتقال إجباري للوجهة: 13 ثانية بلا تقدم فعلي (أو استنزاف النقلات الذكية) =
+--       انتقال لمكان أرضي حر عند الوجهة نفسها — zFORCE. الكهف يبقى «مشي فقط».
+--  [22] الكول داون: 150 ثانية (ناقص 30) بدل 180.
+--  [23] البرومبت العشوائي: كان السكربت يحدّق بأي E/F (اجلس/ارتداء/باب/مركبة) ويحسبه
+--       دروب فيبين «خامل». الحين: مطابقة حدود كلمة (mistake ما تلحق take)، استبعاد
+--       برومبتات الشخصيات والأدوات، وضغط E الدوري صار للالتقاط الصريح فقط.
+--  [24] دروب شبح: إذا ما فيه أي برومبت قابل للضغط، المحاولة تطلع بعد 3 محاولات بدل
+--       8 ثوانٍ كاملة، والكائن يُسجّل دقيقتين (zDROP phantom) حتى ما يقطع المشي.
+-- ════════════════════════════════════════════════════════════
+-- ── v7.1h (كهف السيبراني: السقف + التعليق + فك التعليق العشوائي) ─
+--  [25] كان يطلع فوق الكهف: groundOf يلتقي سقف الكهف (Y≈37) بدل أرضه (Y=9) — اللوق
+--       أثبت: zCAVE d=1.2 y=37.0/9.0 (وصلت فوق الفتحة وانتظرت نقاط ما تنزل). الحين
+--       مشي الكهف بإحداثياته الحرفية، والوصول يُقاس بالارتفاع أيضًا (zCAVE y=).
+--  [26] كان يعلق جوه: النقلة الذكية والفرار السريع كانا يمنعون أنفسهم داخل حلقة
+--       الكهف (حتى ما يُقذف اللاعب لجوه من برا). الحين عبور الحدّ هو الممنوع فقط،
+--       والحركة داخل الحلقة حرة — يطلع من على الحرف وينزل للنقطة.
+--  [27] فك التعليق العشوائي (zRND): بعد الفرار السريع نقلة 6-15 متر للأمام أو الجانب
+--       أو جهة عشوائية — الطلب المتكرر: «لما يعلق يسوي انتقال تلقائي 10 أو 15 متر».
+--  [28] الكهف ما يبلّع الدروب: busyCyber كان يوقف الدروب وضغطة E 45 ثانية كاملة.
+--       الحين ضغطة E للالتقاط شغالة طول الوقت، وإذا النقاط ما نزلت 12 ثانية ودروب
+--       حاضر نلحقه (zDROP-atPoint)، وبعد 22 ثانية بلا تقدم نطلع من الكهف (zCAVE bail).
 -- ════════════════════════════════════════════════════════════
 
 if _G.__FINAL_STOP then pcall(_G.__FINAL_STOP) end
@@ -83,12 +127,20 @@ local CFG = {
   -- v7.1: الدروب ما يمشي له — ينتقل فوقه وينزل تحته ويضغط
   DROP_TP         = true,
   DROP_TP_ABOVE   = 5,
-  DROP_OPEN_MS    = 7,
+  -- v7.1g: نافذة الفتح 8 ثوانٍ — أطول منها كانت تخلّي السكربت يحدّق ببرومبت عشوائي
+  -- ويحسبه دروب (واللاعب يبين خامل). الخروج المبكر إذا ما فيه برومبت مرشّح أصلًا.
+  DROP_OPEN_MS    = 8,
   DROP_RETRY_CD   = 8,
-  -- v7.1f: كول داون المهمة 3 دقائق بالضبط بعد كل مهمة تكتمل (قيمة ثابتة — السيرفر
-  -- يرسل طابع وقت مو عدّاد، فما فيه مصدر أدق من زمن محلي ثابت)
-  MISSION_COOLDOWN = 180,
-  BOARD_WALK_MIN   = 12,   -- ما نرجع للوحة وقت الكول داون إلا إذا كنا أبعد من هالكيلو متر
+  -- v7.1f: ضغط E دوري (مثل اللاعب الحقيقي) — ما يمسك أي برومبت ممنوع ولا يشتغل وقت الإيقاف
+  E_PRESS_CD      = 3,
+  -- v7.1f: نطاق البحث عن برومبت الالتقاط بعد ما نقف فوق الدروب (studs)
+  DROP_PR_RADIUS  = 40,
+  -- v7.1f: كول داون المهمة ثابت بعد كل مهمة تكتمل (قيمة ثابتة — السيرفر
+  -- يرسل طابع وقت مو عدّاد، فما فيه مصدر أدق من زمن محلي ثابت). 150 ثانية = 3 دقائق ناقص 30
+  MISSION_COOLDOWN = 150,
+  BOARD_WALK_MIN   = 12,   -- ما نرجع للوحة وقت الكول داون إلا إذا كنا أبعد من 12 متر (studs)
+  ESC_STALL        = 5.5,  -- بلا تقدم فعلي هالقدر من الثواني = انتقال سريع للفرار
+  ESC_GIVEUP       = 13,   -- لو معلق بعده = نسلّم ونعيد التخطيط (ما نلف للأبد)
   HOP_DIST         = 10,   -- طول النقلة الذكية عند أقل تعليق
   HOP_STALL        = 0.55, -- زمن التعليق اللي يستفز النقلة (كان 1.5 ثانية)
 }
@@ -125,6 +177,13 @@ local ST = {
   radarSelectedPlr=nil, aimbotOn=false, killAuraOn=false,
   auraRange=15, autoKillOn=false, autoKillRange=80,
   stats={missions=0,dropsNormal=0,dropsSecret=0,quizzesSolved=0,cyberPoints=0,failed=0},
+  -- v7.1f: كاشات صغيرة كانت locals فوق — حوّلناها حقول هنا (حد Luau: 200 local للشنكل)
+  mUI={at=-1,on=false}, logDirty=false, tbxTracked=false, promptDirty=true,
+  caveDoneAt=0, cavePtsSeen=0, escTps=0, escAt=0,
+  forceTpAt=0, forceTps=0, eLoopAt=0, dropPrLog=0, walkGoal=nil,
+  randHopAt=0, randTps=0,
+  -- «دروب شبح»: كائن ما فيه أي برومبت نضغطه — نسجّله حتى ما نعلّق عليه كل 8 ثوانٍ
+  dropBlack=setmetatable({}, {__mode = "k"}),
 }
 
 local mobileFlyDir = {W=false, S=false, A=false, D=false, Up=false, Down=false}
@@ -156,10 +215,10 @@ local logBuf={}
 local logLbl, scroll, statusLbl, statsLbl
 -- v7.1f: تحديث الواجهة صار مجمّع (كل 0.35 ثانية بدل كل سطر). إعادة نص الـ TextLabel
 -- الملتف + AbsoluteSize كانت أغلى عملية على أندرويد وقت زحمة اللوق.
-local logDirty = false
+-- (العلامات الصغيرة صارت داخل ST — الشنكل قرب حد Luau: 200 متغيّر محلي)
 local function flushLog()
-  if not logDirty then return end
-  logDirty = false
+  if not ST.logDirty then return end
+  ST.logDirty = false
   if not logLbl then return end
   logLbl.Text = table.concat(logBuf, "\n")
   if scroll then
@@ -171,8 +230,8 @@ local function addLog(s)
   if _G.StopAutoFarm then return end
   logBuf[#logBuf+1]=("[%s] %s"):format(os.date("%H:%M:%S"),s)
   if #logBuf>60 then table.remove(logBuf,1) end
-  logDirty = true
-  print("[v7.1]",s)
+  ST.logDirty = true
+  print("[v7.1h]",s)
 end
 task.spawn(function()
   while not _G.StopAutoFarm do
@@ -220,7 +279,7 @@ local function shutdown()
     pcall(function() cam.FieldOfView=70 end)
     for _,n in ipairs({"FinalFixGui","FinalFixMobileBtn","MobileFlyGui","WeatherAutoGui"}) do local g=pg:FindFirstChild(n); if g then g:Destroy() end end
   end)
-  print("[v7.1] Stopped")
+  print("[v7.1h] Stopped")
 end
 _G.__FINAL_STOP=shutdown
 
@@ -249,9 +308,16 @@ local function hum() local c=char(); return c and c:FindFirstChildWhichIsA("Huma
 local function hrp() local c=char(); return c and c:FindFirstChild("HumanoidRootPart") end
 local function alive() local h=hum(); return h and h.Health>0 end
 local function flatDist(a,b) return math.sqrt((a.X-b.X)^2+(a.Z-b.Z)^2) end
+-- v7.1f: منطقة محرّمة على النقلة حول الكهف — المستخدم شرطها «مشي فقط»، والنقلة
+-- تقدر تعدّي الباب المقفل أو تلسق اللاعب فوق سقف الكهف.
+local function inCaveNoHop(pos)
+  return flatDist(pos, CFG.CYBER_CAVE_POS) < 30
+    or flatDist(pos, CFG.CYBER_DOOR_POS) < 26
+    or flatDist(pos, CFG.CYBER_DOOR_OUT) < 22
+end
 
 -- v7.1f: نهاية المهمة الحتمية (السيرفر قال مافريق هدف / إشارة Complete).
--- من هاللحظة كول داون 3 دقائق بالضبط، ومافيه أي ضغط بدء قبله.
+-- من هاللحظة كول داون CFG.MISSION_COOLDOWN بالضبط، ومافيه أي ضغط بدء قبله.
 -- ضد الترديد: ShowTarget(nil) و MissionComplete يجون سوا بنفس اللحظة.
 local function markMissionEnd(reason)
   local t = tick()
@@ -262,7 +328,7 @@ local function markMissionEnd(reason)
   ST.cdLogged = false
   addLog(("zMISSION end=%s zCD=%ds"):format(tostring(reason), CFG.MISSION_COOLDOWN))
 end
--- أي كتابة كول داون قصيرة (2/5 ثوانٍ لأنهاء محاولة فاشلة) ما تقصّر كول داون 180 قائم
+-- أي كتابة كول داون قصيرة (2/5 ثوانٍ لأنهاء محاولة فاشلة) ما تقصّر الكول داون الطويل القائم
 local function setCdAt(t)
   if t > ST.cdExpire then ST.cdExpire = t end
 end
@@ -386,8 +452,31 @@ local function getPlayerRankInfo(p)
   return "عضو", 0
 end
 
-local BODY={head=1,humanoidrootpart=1,torso=1,uppertorso=1,lowertorso=1,["left arm"]=1,["right arm"]=1,["left leg"]=1,["right leg"]=1,leftupperarm=1,leftlowerarm=1,lefthand=1,rightupperarm=1,rightlowerarm=1,righthand=1,leftupperleg=1,leftlowerleg=1,leftfoot=1,rightupperleg=1,rightlowerleg=1,rightfoot=1}
-local WEAPONS={"m4","scar","ak","sniper","cuff","card","laptop","gun","pistol","rifle","uzi","mp5","glock","awm","m1911","revolver","shotgun","knife","skin","golden","clan"}
+-- v7.1f: قوائم الكلمات كلها في متغيّر واحد — الشنكل الرئيسي قرب حد Luau (200 local)
+-- وكل «local» فوق يكلّف خانة، فالحزم يخلّي مكان آمن للتطوير بعدها.
+local WORDS = {
+  BODY = {head=1,humanoidrootpart=1,torso=1,uppertorso=1,lowertorso=1,["left arm"]=1,["right arm"]=1,["left leg"]=1,["right leg"]=1,leftupperarm=1,leftlowerarm=1,lefthand=1,rightupperarm=1,rightlowerarm=1,righthand=1,leftupperleg=1,leftlowerleg=1,leftfoot=1,rightupperleg=1,rightlowerleg=1,rightfoot=1},
+  WEAPONS = {"m4","scar","ak","sniper","cuff","card","laptop","gun","pistol","rifle","uzi","mp5","glock","awm","m1911","revolver","shotgun","knife","skin","golden","clan"},
+  BLOCK = {"شراء","متجر","إيقاف","ايقاف","إلغاء","الغاء","طقس","أجواء","اجواء","buy","shop","stop","cancel","weather"},
+  AR = {["٠"]="0",["١"]="1",["٢"]="2",["٣"]="3",["٤"]="4",["٥"]="5",["٦"]="6",["٧"]="7",["٨"]="8",["٩"]="9"},
+  OP = {
+    ["×"]="*", ["✕"]="*", ["✖"]="*", ["＊"]="*",
+    ["÷"]="/", ["∕"]="/", ["／"]="/",
+    ["＋"]="+", ["﹢"]="+", ["➕"]="+",
+    ["－"]="-", ["−"]="-", ["–"]="-", ["—"]="-", ["―"]="-", ["﹣"]="-", ["➖"]="-",
+    ["＝"]="=",
+    ["؟"]="?", ["ـ"]="",
+  },
+  APPLY = {"تأكيد","تاكد","أكد","اكد","apply","submit","confirm","ok","نعم","عمل","إرسال","ارسال","حل"},
+  NO_CLICK = {"تخطي","skip","إلغاء","الغاء","cancel","close","إغلاق","اغلاق","خروج","exit"},
+  CUFF = {"cuff","handcuff","arrest","restrain","zip","taze","stun","freeze","مصفاد","كلبش","تقييد","قيد","أغلال","اغلال","زنجير","تكتيف","ربط"},
+  JAIL = {"jail","prison","cell","detention","سجن","زنزانة","معتقل","حبس"},
+  -- v7.1g: كلمات «الالتقاط» — نلاحق برومبت الدروب حتى لو المجلد مو تحت workspace.Drops.
+  -- متعمّد ماحنا حاطين «صندوق/box» ولا «open/افتح» ولا «take/grab»: صناديق المهمة والأبواب
+  -- و«اجلس/اركب» مو دروب، وكل كلمة فضفاضة كانت تخلّي السكربت يعلّق على برومبت عشوائي.
+  -- الكلمات الإنجليزية تُطابَق بحدود كلمة (PICK.has) عشان «mistake» ما تلحق «take».
+  PICKUP = {"التقاط","التقاط العناصر","pick","pickup","collect","airdrop","دروب","إسقاط","اسقاط"},
+}
 local function isBoxName(n)
   n = tostring(n or ""):lower()
   if ST.crateName and n == ST.crateName then return true end
@@ -399,7 +488,7 @@ end
 local function isCrate(item)
   local n = item.Name:lower()
   if isBoxName(n) then return true end
-  for _, w in ipairs(WEAPONS) do if n:find(w, 1, true) then return false end end
+  for _, w in ipairs(WORDS.WEAPONS) do if n:find(w, 1, true) then return false end end
   if ST.missionOn and ST.isPickup == false then return item:IsA("Tool") end
   return false
 end
@@ -426,7 +515,7 @@ end
 local function getCrate()
   local c=char(); if not c then return nil end
   for _,item in ipairs(c:GetChildren()) do
-    if not BODY[item.Name:lower()] and not item:IsA("Humanoid") and not item:IsA("Shirt") and not item:IsA("Pants") and not item:IsA("ShirtGraphic") and not item:IsA("BodyColors") and not item:IsA("Animate") and not item:IsA("LocalScript") and not item:IsA("Script") and not item:IsA("Accessory") and not item:IsA("CharacterMesh") then
+    if not WORDS.BODY[item.Name:lower()] and not item:IsA("Humanoid") and not item:IsA("Shirt") and not item:IsA("Pants") and not item:IsA("ShirtGraphic") and not item:IsA("BodyColors") and not item:IsA("Animate") and not item:IsA("LocalScript") and not item:IsA("Script") and not item:IsA("Accessory") and not item:IsA("CharacterMesh") then
       if isCrate(item) then return item end
     end
   end
@@ -448,6 +537,8 @@ local function classifyDrop(obj)
 end
 
 local dropCache = {obj = nil, kind = nil, at = 0}
+-- جدول برومبتات الالتقاط: يتعبّى تحت (بعد promptSet) — تصريح أمامي واحد يكلّف خانة واحدة
+local PICK = {set = {}, at = 0}
 local function dropHit(item)
   dropCache.obj, dropCache.kind, dropCache.at = item, classifyDrop(item), tick()
   return dropCache.obj, dropCache.kind
@@ -487,12 +578,16 @@ local function findActiveDrop(force)
   for _, obj in ipairs(workspace:GetChildren()) do
     if (obj:IsA("Model") or obj:IsA("BasePart")) and dynName(obj) then return dropHit(obj) end
   end
+  -- v7.1f: آخر درجة — الكشف بالبرومبت نفسه. الإثبات من شاشته: zDROP scan: Drops=0
+  -- وهو واقف فوق الـ Airdrop، يعني الدروب مو تحت workspace.Drops. (مسنَّد تحت)
+  local pd = PICK.dropHit()
+  if pd then return dropHit(pd) end
   dropCache.obj, dropCache.kind, dropCache.at = nil, nil, tick()
   return nil, nil
 end
 local function dropCacheClear() dropCache.obj, dropCache.kind, dropCache.at = nil, nil, 0 end
 
-local promptSet, promptDirty = {}, true
+local promptSet = {}; ST.promptDirty = true
 local function promptHost(obj)
   local parent = obj.Parent
   if not parent then return nil end
@@ -507,25 +602,32 @@ end
 local function scanPromptsOnce()
   for _, obj in ipairs(workspace:GetDescendants()) do
     if obj:IsA("ProximityPrompt") and not promptSet[obj] then
-      promptSet[obj] = {p = obj, h = promptHost(obj)}
+      local e = {p = obj, h = promptHost(obj)}
+      promptSet[obj] = e
+      PICK.classify(e)
     end
   end
-  promptDirty = false
+  ST.promptDirty = false
 end
 addC(workspace.DescendantAdded:Connect(function(obj)
   if obj:IsA("ProximityPrompt") then
-    promptSet[obj] = {p = obj, h = promptHost(obj)}
+    local e = {p = obj, h = promptHost(obj)}
+    promptSet[obj] = e
+    -- تصنيف مرة وحدة عند الإضافة (مو كل فريم) — الموبايل ما يتحمل كنس النصوص
+    PICK.classify(e)
   end
 end))
 addC(workspace.DescendantRemoving:Connect(function(obj)
-  if obj:IsA("ProximityPrompt") then promptSet[obj] = nil end
+  if obj:IsA("ProximityPrompt") then
+    promptSet[obj] = nil; PICK.set[obj] = nil
+  end
 end))
 task.spawn(function()
   task.wait(0.5)
   scanPromptsOnce()
   while not _G.StopAutoFarm do
     task.wait(2)
-    if promptDirty then scanPromptsOnce() end
+    if ST.promptDirty then scanPromptsOnce() end
   end
 end)
 
@@ -550,12 +652,119 @@ local function activePrompts(radius, onlyEnabled)
 end
 local function getNearbyPrompts(radius) return activePrompts(radius, true) end
 
-local BLOCK_WORDS = {"شراء","متجر","إيقاف","ايقاف","إلغاء","الغاء","طقس","أجواء","اجواء","buy","shop","stop","cancel","weather"}
 local function isBlockedPrompt(p)
   if not p then return true end
   local txt = ((p.ActionText or "") .. " " .. (p.ObjectText or "") .. " " .. (p.Parent and p.Parent.Name or "")):lower()
-  for _, w in ipairs(BLOCK_WORDS) do if txt:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.BLOCK) do if txt:find(w, 1, true) then return true end end
   return false
+end
+
+-- ── v7.1g: برومبتات الالتقاط (PICK) ─────────────────────────
+-- الدليل من شاشته: zDROP scan: Drops=0 وهو واقف فوق الـ Airdrop — يعني الدروب مو
+-- تحت workspace.Drops، والبرومبت نفسه («E التقاط العناصر») هو الدليل الأدق.
+-- كل الدوال هنا داخل جدول واحد: الشنكل الرئيسي قرب حد Luau (200 local)، وكل
+-- «local function» زيادة تكلّف خانة.
+function PICK.text(p)
+  local m = p:FindFirstAncestorOfClass("Model")
+  return (((p.ActionText or "") .. " " .. (p.ObjectText or "") .. " " ..
+    (p.Parent and p.Parent.Name or "") .. " " .. (m and m.Name or ""))):lower()
+end
+function PICK.blocked(txt)
+  for _, w in ipairs(WORDS.BLOCK) do if txt:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.NO_CLICK) do if txt:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.CUFF) do if txt:find(w, 1, true) then return true end end
+  return false
+end
+function PICK.isPickup(txt)
+  if PICK.blocked(txt) then return false end
+  for _, w in ipairs(WORDS.PICKUP) do if PICK.has(txt, w) then return true end end
+  return false
+end
+-- حدود كلمة للنصوص الإنجليزية: «take» كانت تلحق «mistake» و«seat» وتخلّي السكربت
+-- يعلّق على برومبت عشوائي. العربية ما فيها حدود كلمة — بحث عادي.
+function PICK.has(txt, w)
+  if w:match("^[a-z]+$") then
+    return txt:find("%f[%a]" .. w .. "%f[%A]") ~= nil
+  end
+  return txt:find(w, 1, true) ~= nil
+end
+-- برومبت على شخصية لاعب أو أداة = مو دروب (مثال شاشته: «F ارتداء» فوق شخصية الملك)
+function PICK.onChar(p)
+  if p:FindFirstAncestorWhichIsA("Tool") then return true end
+  local m = p:FindFirstAncestorOfClass("Model")
+  if m and m:FindFirstChildWhichIsA("Humanoid") then return true end
+  return false
+end
+-- نص البرومبت يُفحص مرة عند الإضافة ويُخزَّن — كنس النصوص كل فريم هو سبب تعليق الموبايل
+function PICK.classify(e)
+  if e.pk == nil then
+    e.k = PICK.text(e.p)
+    e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(e.k)
+  end
+  if e.pk then PICK.set[e.p] = e end
+  return e.pk
+end
+function PICK.host(e)
+  local host = e.h
+  if not host or not host.Parent then host = promptHost(e.p); e.h = host end
+  return host
+end
+-- مسح محدود (400 كاشة كل 3 ثوانٍ) للبرومبتات اللي نصها تغيّر بعد ما صُنّفت
+function PICK.rescan()
+  local n = 0
+  for _, e in pairs(promptSet) do
+    if n >= 400 then break end
+    n = n + 1
+    local txt = PICK.text(e.p)
+    if e.k ~= txt then
+      e.k = txt; e.pk = (not PICK.onChar(e.p)) and PICK.isPickup(txt)
+    end
+    if e.pk then PICK.set[e.p] = e end
+  end
+end
+function PICK.near(radius, fromPos)
+  local out = {}
+  local r = fromPos or (hrp() and hrp().Position)
+  if not r then return out end
+  radius = radius or CFG.DROP_PR_RADIUS
+  if next(PICK.set) == nil and tick() - PICK.at > 3 then PICK.at = tick(); PICK.rescan() end
+  for _, e in pairs(PICK.set) do
+    local p = e.p
+    if p.Parent then
+      local host = PICK.host(e)
+      if host then
+        local d = (host.Position - r).Magnitude
+        if d < radius then out[#out+1] = {prompt = p, dist = d, part = host} end
+      else
+        PICK.set[p] = nil
+      end
+    else
+      PICK.set[p] = nil
+    end
+  end
+  table.sort(out, function(a, b) return a.dist < b.dist end)
+  return out
+end
+
+-- الكائن اللي يمسك برومبت الالتقاط = دروب. نستثني صناديق المهمة (اسم الجزء أو الموديل)
+-- حتى ما نقاطع التسليم، ونستثني مرحلة التسليم كلها.
+function PICK.dropHit()
+  if not ST.autoDrop then return nil end
+  if ST.missionOn and ST.isPickup == false then return nil end
+  local now = tick()
+  for _, e in ipairs(PICK.near(CFG.DROP_PR_RADIUS)) do
+    local part = e.part
+    local m = part:FindFirstAncestorOfClass("Model")
+    local obj = m or part
+    -- الكهف «مشي فقط»: ما نعتبر أي برومبت جوا منطقة الكهف دروبًا (والانتقال هناك يقذفك فوق السقف)
+    if inCaveNoHop(part.Position) then
+    -- برومبت عشوائي خلّصنا عليه قبل شوي = شبح. نعيد النظر فيه بعد دقيقتين بس.
+    elseif (ST.dropBlack[obj] or 0) > now then
+    elseif not isBoxName(part.Name) and not isBoxName(e.prompt.Name) and not (m and isBoxName(m.Name)) then
+      return obj
+    end
+  end
+  return nil
 end
 
 local function activatePrompt(p, withHold, maxHold)
@@ -602,6 +811,31 @@ local function pressE(holdTime)
     VIM:SendKeyEvent(false, Enum.KeyCode.E, false, game)
   end)
 end
+
+-- v7.1g: ضغط E دوري كل 3 ثوانٍ (طلبه صريح: «خلّه كل 3 ثواني يضغط E» حتى ما يبين معلق).
+-- بس الحين مقصور على برومبت التقاط صريح في المدى: الضغطة العمياء كانت تفتح أي برومبت
+-- عشوائي (اجلس/ارتداء/باب/مركبة) فتخلي السكربت يعلّق عليه والواجهة تبين «خامل».
+task.spawn(function()
+  task.wait(3)
+  while not _G.StopAutoFarm do
+    task.wait(0.5)
+    if tick() - (ST.eLoopAt or 0) >= CFG.E_PRESS_CD then
+      ST.eLoopAt = tick()
+      if not ST.busyDrop and not ST.spectating then
+        local r = hrp()
+        if r and alive() then
+          local press = false
+          for _, e in ipairs(activePrompts(14, true)) do
+            local txt = PICK.text(e.prompt)
+            if PICK.blocked(txt) then press = false break end
+            if not PICK.onChar(e.prompt) and PICK.isPickup(txt) then press = true end
+          end
+          if press then pressE(0.16) end
+        end
+      end
+    end
+  end
+end)
 
 local function partsNear(pos, radius)
   local out = {}
@@ -652,28 +886,20 @@ local function logMs(tag, t0, extra)
   addLog(("zTIME %-10s = %dms %s"):format(tag, ms, extra or ""))
 end
 
-local AR_MAP = {["٠"]="0",["١"]="1",["٢"]="2",["٣"]="3",["٤"]="4",["٥"]="5",["٦"]="6",["٧"]="7",["٨"]="8",["٩"]="9"}
 -- v7.1c: كان في نمطين فاضيين gsub("","+") و gsub("","-") — Lua يحقن العلامة بين كل
 -- حرفين، فكانت «10 ＋ 5» تتحول «+1+0+-+-+5+» ويطلع الجواب غلط. هذا سبب «ما يحل الكويز».
-local OP_MAP = {
-  ["×"]="*", ["✕"]="*", ["✖"]="*", ["＊"]="*",
-  ["÷"]="/", ["∕"]="/", ["／"]="/",
-  ["＋"]="+", ["﹢"]="+", ["➕"]="+",
-  ["－"]="-", ["−"]="-", ["–"]="-", ["—"]="-", ["―"]="-", ["﹣"]="-", ["➖"]="-",
-  ["＝"]="=",
-  ["؟"]="?", ["ـ"]="",
-}
-local cleanMemo, cleanMemoN = {}, 0
+-- الجداول صارت داخل WORDS (فوق) عشان ما تاكل خانات الـ local.
+local cleanMemo = {__n = 0}
 local function cleanText(t)
   local raw = t or ""
   if type(raw) ~= "string" then raw = tostring(raw) end
   local cached = cleanMemo[raw]
   if cached ~= nil then return cached end
   local s = raw
-  for ar,en in pairs(AR_MAP) do s = s:gsub(ar,en) end
-  for k,v in pairs(OP_MAP) do s = s:gsub(k,v) end
-  cleanMemoN = cleanMemoN + 1
-  if cleanMemoN > 400 then cleanMemo = {}; cleanMemoN = 0 end
+  for ar,en in pairs(WORDS.AR) do s = s:gsub(ar,en) end
+  for k,v in pairs(WORDS.OP) do s = s:gsub(k,v) end
+  cleanMemo.__n = cleanMemo.__n + 1
+  if cleanMemo.__n > 400 then cleanMemo = {__n = 0} end
   cleanMemo[raw] = s
   return s
 end
@@ -723,9 +949,8 @@ end
 -- v7.1f:كويز الدروب/الصندوق فيه مربع كتابة دائمًا — نتتبع المربعات بالأحداث بدل
 -- كنس كل واجهة (وكل CoreGui) كل 0.15 ثانية، وهو اللي كان يجمّد أندرويد.
 local trackedBoxes = {}
-local tbxTracked = false
 addC(pg.DescendantAdded:Connect(function(d)
-  if tbxTracked and d:IsA("GuiTextBox") then
+  if ST.tbxTracked and d:IsA("GuiTextBox") then
     local g = d:FindFirstAncestorOfClass("ScreenGui")
     if g and not isOwnGui(g) then
       local list = trackedBoxes[g]
@@ -735,7 +960,7 @@ addC(pg.DescendantAdded:Connect(function(d)
   end
 end))
 addC(pg.DescendantRemoving:Connect(function(d)
-  if tbxTracked and d:IsA("GuiTextBox") then
+  if ST.tbxTracked and d:IsA("GuiTextBox") then
     local g = d:FindFirstAncestorOfClass("ScreenGui")
     local list = g and trackedBoxes[g]
     if list then
@@ -757,7 +982,7 @@ task.spawn(function()
       end
     end
   end
-  tbxTracked = true
+  ST.tbxTracked = true
 end)
 
 local quizScan = {at = -1, gui = nil, lbl = nil, box = nil, btns = nil, joined = ""}
@@ -844,11 +1069,10 @@ local function scanQuiz(force)
   return quizScan
 end
 
-local APPLY_WORDS = {"تأكيد","تاكد","أكد","اكد","apply","submit","confirm","ok","نعم","عمل","إرسال","ارسال","حل"}
 -- v7.1e: أزرار ممنوع نضغطها كـ«تأكيد» أبدًا — الاحتياطي (أكبر زر) كان ممكن يضغط «تخطي» ويلغي المهمة
-local NO_CLICK_WORDS = {"تخطي","skip","إلغاء","الغاء","cancel","close","إغلاق","اغلاق","خروج","exit"}
+-- (القوائم صارت داخل WORDS فوق — توفيرًا لخانات الـ local)
 local function isNoClickText(t)
-  for _, w in ipairs(NO_CLICK_WORDS) do if t:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.NO_CLICK) do if t:find(w, 1, true) then return true end end
   return false
 end
 local function pickApplyBtn(btns)
@@ -857,12 +1081,12 @@ local function pickApplyBtn(btns)
   for _, b in ipairs(btns) do
     local t = ((b.Name or "") .. " " .. (b.Text or "")):lower()
     local bad = (b.Text == "X" or b.Text == "x" or b.Text == "✕")
-    for _, w in ipairs(NO_CLICK_WORDS) do if t:find(w, 1, true) then bad = true; break end end
+    for _, w in ipairs(WORDS.NO_CLICK) do if t:find(w, 1, true) then bad = true; break end end
     if not bad then safe[#safe+1] = b end
   end
   for _, b in ipairs(safe) do
     local t = ((b.Name or "") .. " " .. (b.Text or "")):lower()
-    for _, w in ipairs(APPLY_WORDS) do if t:find(w, 1, true) then return b end end
+    for _, w in ipairs(WORDS.APPLY) do if t:find(w, 1, true) then return b end end
   end
   local big
   for _, b in ipairs(safe) do
@@ -969,14 +1193,6 @@ local function findNearbySpot(fromPos, dest)
   return nil
 end
 
--- v7.1f: منطقة محرّمة على النقلة حول الكهف — المستخدم شرطها «مشي فقط»، والنقلة
--- تقدر تعدي الباب المقفل أو تلسق اللاعب فوق سقف الكهف.
-local function inCaveNoHop(pos)
-  return flatDist(pos, CFG.CYBER_CAVE_POS) < 30
-    or flatDist(pos, CFG.CYBER_DOOR_POS) < 26
-    or flatDist(pos, CFG.CYBER_DOOR_OUT) < 22
-end
-
 -- v7.1f: النقلة الذكية — بدل «انتقل لآخر الوجهة» اللي كان يقذف اللاعب لمكان غلط:
 -- 10 أمتار للأمام على المسار نفسه (نفس polyline المشي)، وإذا الباقي للوجهة أقل من
 -- 10 يخلصها بوقفة وحدة. يتحقق بالأرض الصلبة وبالفراغ فوقه، وما يدخل منطقة الكهف.
@@ -993,7 +1209,9 @@ local function smartHop(dest, wpts, idx)
   if maxHop < 1.5 then maxHop = math.min(2.5, D) end
   local function tryPoint(p, forward)
     if forward > D + 0.5 then return nil, 0 end
-    if inCaveNoHop(p) or inCaveNoHop(r.Position) then return nil, forward end
+    -- v7.1g: الكهف «مشي فقط» = ما نقذف أحد لجوه من برا. أما إذا كان انطلاقنا ووصولنا
+    -- الاثنين داخل الحلقة فالنقلة مطلوبة — القديم كان يوقف النقل تمامًا وهو جوه = يعلق للأبد.
+    if inCaveNoHop(p) ~= inCaveNoHop(r.Position) then return nil, forward end
     local gy = rayFloor(p, 5, 12)
     if gy and (gy.Y - r.Position.Y) < 4 then
       local landing = Vector3.new(p.X, gy.Y + 2.2, p.Z)
@@ -1054,12 +1272,180 @@ local function smartHop(dest, wpts, idx)
   return false
 end
 
+-- v7.1f: «محبوس؟» — سقف فوقنا + 3 من 4 جهات مسدودة = انحبسنا (غرفة السيبراني/زنزانة/
+-- صندوق). RespectCanCollide يمنع أن المناطق الشفافة تُحسب جدران.
+local function trappedHere(r)
+  if not r then return false end
+  local rp = makeRayParams()
+  local ceiling
+  pcall(function() ceiling = workspace:Raycast(r.Position, Vector3.new(0, 6, 0), rp) end)
+  if not ceiling then return false end
+  local blocked = 0
+  for _, d in ipairs({Vector3.new(1,0,0), Vector3.new(-1,0,0), Vector3.new(0,0,1), Vector3.new(0,0,-1)}) do
+    local hit
+    pcall(function() hit = workspace:Raycast(r.Position, d * 4, rp) end)
+    if hit then blocked = blocked + 1 end
+  end
+  return blocked >= 3
+end
+
+-- v7.1f: الفرار السريع — إذا النقلة الذكية ما كفّت (محبوس جوا غرفة أو معلق بحرف)،
+-- نقلة حقيقية لبقعة حرة باتجاه الوجهة. ما تسوي شي وقت الإيقاف، وما تدخل الكهف من برا.
+local function fastEscape(dest)
+  if not ST.emergencyTpOn then return false end
+  if tick() - (ST.escAt or 0) < 2.5 then return false end
+  local r = hrp(); if not r or not alive() then return false end
+  local before = r.Position
+  local trapped = trappedHere(r)
+  local goal = dest or ST.goalPos or ST.walkDest
+  -- مافي وجهة (واقفين) ومنحبسين: نطلع لبرّا — بوابة الكهف إذا كنا قربه، وإلا الموقع الآمن
+  if not goal and trapped then
+    goal = (flatDist(before, CFG.CYBER_CAVE_POS) < 60) and CFG.CYBER_DOOR_OUT or CFG.SAFE_POS
+  end
+  if not goal then return false end
+  local cands = {}
+  local s = findNearbySpot(before, goal)
+  if s then cands[#cands+1] = s end
+  local bd = Vector3.new(goal.X - before.X, 0, goal.Z - before.Z)
+  if bd.Magnitude > 1 then
+    bd = bd.Unit
+    for _, f in ipairs({0.55, 0.3}) do
+      local raw = before + bd * math.min(20, bd.Magnitude * f)
+      -- جوه الكهف: نفس مستوى الأرض، وإلا groundOf يطلعه فوق السقف
+      cands[#cands+1] = inCaveNoHop(raw) and raw or groundOf(raw)
+    end
+  end
+  ST.escAt = tick()
+  for _, sp in ipairs(cands) do
+    -- الكهف «مشي فقط»: ما ننتقل لأحد داخل الحلقة من برا. إذا انطلاقنا داخلها فالطلعة
+    -- لأي بقعة حرة مسموحة (وإلا يبقى معلق جوه للأبد)، والانحباس الفعلي يبيح أي طلعة.
+    local caveOk = trapped or not inCaveNoHop(sp) or inCaveNoHop(before)
+    if caveOk and isSpotFree(sp) then
+      tpTo(sp, false)
+      task.wait(0.18)
+      local r2 = hrp()
+      local moved = r2 and flatDist(before, r2.Position) or 0
+      if moved >= 3 then
+        ST.escTps = (ST.escTps or 0) + 1
+        if tick() - (ST.lastEmergencyLog or 0) > 1.2 then
+          ST.lastEmergencyLog = tick()
+          addLog(("🚑 انتقال سريع للفرار +%.0f متر — zESC toGoal=%.0f zTrap=%s zN=%d"):format(
+            moved, r2 and flatDist(r2.Position, goal) or -1, tostring(trapped), ST.escTps))
+        end
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- v7.1f: آخر درجة تصعيد — الانتقال الإجباري للوجهة. النقلة الذكية (10م) والفرار السريع
+-- ما يكفّون لو الطريق مسدود تمامًا، فيبقى اللاعب يلف. هنا ننتقل لمكان أرضي حر عند الوجهة
+-- نفسها (أو أقرب بقعة حرة لها). الكهف يبقى «مشي فقط»: ما نقذف أحد داخل منطقته من برا.
+local function forceTpToDest(dest)
+  if not ST.emergencyTpOn then return false end
+  dest = dest or ST.goalPos or ST.walkDest
+  if not dest then return false end
+  if tick() - (ST.forceTpAt or 0) < 5 then return false end
+  local r = hrp(); if not r or not alive() then return false end
+  local before = r.Position
+  local d0 = flatDist(before, dest)
+  if d0 < 8 then return false end
+  if inCaveNoHop(dest) and not inCaveNoHop(before) then return false end
+  local inCave = inCaveNoHop(before)
+  local goal = inCave and dest or groundOf(dest)
+  local cands = {goal}
+  for _, k in ipairs({8, 16, 26}) do
+    for _, dv in ipairs({Vector3.new(1,0,0), Vector3.new(-1,0,0), Vector3.new(0,0,1), Vector3.new(0,0,-1)}) do
+      local raw = Vector3.new(goal.X + dv.X * k, goal.Y, goal.Z + dv.Z * k)
+      cands[#cands+1] = inCaveNoHop(raw) and raw or groundOf(raw)
+    end
+  end
+  ST.forceTpAt = tick()
+  for _, sp in ipairs(cands) do
+    -- لازم تحتنا أرض صلبة (وإلا نطير في الفراغ) وفوقنا فراغ، ونبقى خارج منطقة الكهف
+    if (not inCaveNoHop(sp) or inCaveNoHop(before)) and rayFloor(sp, 6, 20) and isSpotFree(sp) then
+      tpTo(sp, false)
+      task.wait(0.22)
+      local r2 = hrp()
+      if r2 then
+        local d1 = flatDist(r2.Position, dest)
+        if d1 < d0 - 3 then
+          ST.forceTps = (ST.forceTps or 0) + 1
+          ST.lastEmergencyLog = tick()
+          addLog(("🚁 انتقال إجباري للوجهة — zFORCE d=%.0f→%.0f zN=%d"):format(d0, d1, ST.forceTps))
+          return true
+        end
+      end
+    end
+  end
+  return false
+end
+
+-- v7.1g: طلب المستخدم المتكرر — إذا ما فيه أي حركة، نقلة ١٠-١٥ متر للأمام أو للجانب
+-- أو عشوائي. النقلة الذكية تمشي على المسار فقط، هنا نجرب جهات خارج المسار.
+-- الكهف يبقى «مشي فقط»: ما ننتقل إلا داخل حلقة الكهف نفسها أو خارجها، ما نعبر الحد.
+local function panicHop(dest)
+  if not ST.emergencyTpOn then return false end
+  if tick() - (ST.randHopAt or 0) < 2 then return false end
+  local r, h = hrp(), hum(); if not r or not h or h.Health <= 0 then return false end
+  local before = r.Position
+  local inCave = inCaveNoHop(before)
+  local cands = {}
+  local s = findNearbySpot(before, dest)
+  if s then cands[#cands + 1] = s end
+  local a0 = math.random(0, 359)
+  for _, off in ipairs({0, 90, 180, 270, 45, 135}) do
+    local a = math.rad(a0 + off)
+    for _, d in ipairs({15, 10, 6}) do
+      cands[#cands + 1] = Vector3.new(before.X + math.cos(a) * d, before.Y, before.Z + math.sin(a) * d)
+    end
+  end
+  ST.randHopAt = tick()
+  local tries = 0
+  for _, sp in ipairs(cands) do
+    if tries >= 4 then break end
+    if inCaveNoHop(sp) == inCave then
+      local gy = rayFloor(sp, 5, 16)
+      if gy then
+        local land = Vector3.new(sp.X, gy.Y + 2.4, sp.Z)
+        if isSpotFree(land) or isSpotFree(land + Vector3.new(0, 1, 0)) then
+          tries = tries + 1
+          tpTo(land, false)
+          task.wait(0.16)
+          local r2 = hrp()
+          local got = r2 and flatDist(before, r2.Position) or 0
+          if got >= 3 then
+            ST.randTps = (ST.randTps or 0) + 1
+            if tick() - (ST.lastEmergencyLog or 0) > 1.2 then
+              ST.lastEmergencyLog = tick()
+              addLog(("🎲 نقلة فك تعليق %.0f متر (جانبي/عشوائي) — zRND zN=%d"):format(got, ST.randTps))
+            end
+            return true
+          end
+        end
+      end
+    end
+  end
+  return false
+end
+
 local function walkCore(dest, maxT, isDrop, owner)
   maxT = maxT or 20; local r, h = hrp(), hum()
   if not r or not h or not alive() then return false end
-  local tgt = groundOf(dest); local stopD = 2.0
+  -- v7.1g: الكهف بإحداثياته الحرفية — groundOf كان يمسك سقف الكهف (Y≈37) بدل أرضه
+  -- (Y=9) لأن تحته فراغ، فيطلع فوق الكهف ويستنى نقاط ما تجي (لوق: d=1.2 y=37.0/9.0).
+  local tgt = (owner == "cyber") and dest or groundOf(dest); local stopD = 2.0
+  ST.walkGoal = tgt   -- الوجهة الحقيقية (walkDest تتحوّل لنقطة المسار أثناء المشي)
+  -- v7.1g: الكهف لازم نوصله بالارتفاع نفسه — الوقوف فوق فتحة الكهف (نفس X/Z و Y=37)
+  -- كان يُحسب «وصلنا» فيجمد فوق الكهف بلا نقاط.
+  local function atTgt()
+    if flatDist(r.Position, tgt) > stopD then return false end
+    if owner == "cyber" and math.abs(r.Position.Y - tgt.Y) > 6 then return false end
+    return true
+  end
   -- v7.1f: وصلنا قبل كل شي = بلا ComputeAsync ولا مشي (القديم كان يبني المسار دائمًا)
-  if flatDist(r.Position, tgt) <= stopD then return true end
+  if atTgt() then return true end
   h.WalkSpeed = ST.customSpeedOn and ST.walkSpeed or 16
   local path = PS:CreatePath({AgentRadius=1.5, AgentHeight=5, AgentCanJump=true, WaypointSpacing=3.5})
   local wpts = nil
@@ -1083,12 +1469,20 @@ local function walkCore(dest, maxT, isDrop, owner)
     if not isDrop and owner ~= "cyber" and ST.autoDrop and not ST.busyDrop and not hasCrate() and findActiveDrop() then return "DROP" end
     return nil
   end
-  local function reached() return flatDist(r.Position, tgt) <= stopD end
+  local function reached() return atTgt() end
   local hops = 0
   local idx = 2
-  -- v7.1f: النقلة الذكية بدل «انتقال لآخر الوجهة» — 10 أمتار على المسار بس
+  -- v7.1f: النقلة الذكية بدل «انتقال لآخر الوجهة» — 10 أمتار على المسار بس.
+  -- إذا خلص رصيد النقلة (10) نترقّى لانتقال سريع حقيقي بدل ما نستسلم.
   local function tryHop()
-    if hops >= 10 then return "GIVEUP" end
+    if hops >= 10 then
+      if fastEscape(tgt) then hops = 0; return true end
+      -- ما نسلّم وهو يلف: النقلة الذكية استُنزفت → انتقال إجباري للوجهة
+      if forceTpToDest(tgt) then hops = 0; return true end
+      -- الوجهة قريبة (<8م) أو مسدودة: نقلة جانبية/عشوائية ١٠-١٥ متر بدل التعليق
+      if panicHop(tgt) then hops = 0; return true end
+      return "GIVEUP"
+    end
     if smartHop(tgt, wpts, idx) then hops = hops + 1; return true end
     return false
   end
@@ -1098,6 +1492,15 @@ local function walkCore(dest, maxT, isDrop, owner)
   local repaths = 0
   local lastDetour = 0
   local lastRepath = 0
+  -- v7.1f: التقدم الحقيقي — كان أي احتكاك/انزلاق (≥0.2 متر) يصفّر مؤقّت التعليق
+  -- فيبقى معلق للأبد بلا نقلة. الحين: ما قربنا للوجهة = معلق.
+  local progRef = flatDist(r.Position, tgt)
+  local progSince = t0
+  local function onStuck()
+    local d = flatDist(r.Position, tgt)
+    if d < progRef - 1.2 then progRef = d; progSince = tick(); return 0 end
+    return tick() - progSince
+  end
   local function freeDirSpot(rad)
     local bd = Vector3.new(tgt.X - r.Position.X, 0, tgt.Z - r.Position.Z)
     if bd.Magnitude < 0.1 then return nil end
@@ -1135,6 +1538,21 @@ local function walkCore(dest, maxT, isDrop, owner)
     local it = intr(); if it then return it end
     r, h = hrp(), hum(); if not r or not h or not alive() then return false end
     if reached() then return true end
+    -- v7.1f: سُلّم التصعيد — 0.55s تعليق = نقلة ذكية (جوه)، 5.5s بلا تقدم فعلي =
+    -- انتقال سريع للفرار (يطلّعنا لو انحبسنا بغرفة)، 13s = نسلّم ونعيد التخطيط.
+    local stall = onStuck()
+    if stall > CFG.ESC_STALL then
+      if fastEscape(tgt) then hops = 0; afterHop(); progSince = tick(); continue end
+      -- v7.1g: الفرار ما كفّى = نقلة جانبية/عشوائية ١٠-١٥ متر (تحدّ نفسها كل ثانيتين)
+      if panicHop(tgt) then hops = 0; afterHop(); progSince = tick(); continue end
+      if stall > CFG.ESC_GIVEUP then
+        -- v7.1f: 13 ثانية بلا تقدم = انتقال إجباري للوجهة نفسها بدل ما نستسلم
+        -- ونعيد التخطيط ونلف حول نفس الجدار للأبد.
+        if forceTpToDest(tgt) then hops = 0; afterHop(); progSince = tick(); continue end
+        if panicHop(tgt) then hops = 0; afterHop(); progSince = tick(); continue end
+        return false
+      end
+    end
     if not wpts or #wpts < 2 then
       if tgt.Y - r.Position.Y > 2 then h.Jump = true end
       h:MoveTo(tgt)
@@ -1269,9 +1687,22 @@ task.spawn(function()
           lastPos = r.Position; lastMoveAt = tick()
         elseif tick() - lastMoveAt >= 0.9 then
           local goal = ST.walkDest or ST.goalPos
-          if goal and not inCaveNoHop(r.Position) then
+          if goal then
             if smartHop(goal, nil, nil) then
               lastMoveAt = tick(); lastPos = (hrp() or r).Position
+            end
+            -- 4 ثوانٍ بلا أي حركة = النقلة الذكية ما كفّت (محبوس أو معلّق بحرف)
+            if tick() - lastMoveAt >= 4 then
+              if fastEscape(goal) then lastMoveAt = tick(); lastPos = (hrp() or r).Position
+              elseif panicHop(goal) then lastMoveAt = tick(); lastPos = (hrp() or r).Position end
+            end
+            -- 9 ثوانٍ: الحارس يتولّى — انتقال إجباري للوجهة الأصلية (ST.walkGoal) مو للنقطة الوسيطة
+            if tick() - lastMoveAt >= 9 then
+              if forceTpToDest(ST.walkGoal or goal) then
+                lastMoveAt = tick(); lastPos = (hrp() or r).Position
+              elseif panicHop(ST.walkGoal or goal) then
+                lastMoveAt = tick(); lastPos = (hrp() or r).Position
+              end
             end
           end
         end
@@ -1280,8 +1711,18 @@ task.spawn(function()
       end
     else
       local r = hrp()
-      lastPos = r and r.Position or nil
-      lastMoveAt = tick()
+      if not r then
+        lastPos = nil; lastMoveAt = tick()
+      else
+        -- v7.1f: واقفين من 5+ ثوانٍ ومنحبسين فعلًا (سقف + 3 جهات مسدودة) = انحبس
+        -- بغرفة السيبراني أو زنزانة. ما يشتغل وقت الكول داون ولا وهو واقف بمكان مفتوح.
+        if not lastPos or (r.Position - lastPos).Magnitude > 0.6 then
+          lastPos = r.Position; lastMoveAt = tick()
+        elseif tick() - lastMoveAt > 5 and tick() > (ST.cdExpire or 0)
+          and (ST.autoMission or ST.autoDrop or ST.autoCyber) and trappedHere(r) then
+          if fastEscape(nil) then lastMoveAt = tick(); lastPos = (hrp() or r).Position end
+        end
+      end
     end
   end
 end)
@@ -1384,7 +1825,7 @@ local function handleDrop(target, kind)
   local opened, why = false, "timeout"
   local openT0 = tick()
   local tries = 0
-  local liveCount = 0
+  local liveCount, pkCount = 0, 0
   while (tick() - openT0) * 1000 < CFG.DROP_OPEN_MS * 1000 and not _G.StopAutoFarm and ST.autoDrop do
     tries = tries + 1
     if not target.Parent and not part.Parent then opened = true; why = "gone"; break end
@@ -1394,15 +1835,35 @@ local function handleDrop(target, kind)
       rr.AssemblyLinearVelocity = Vector3.zero
       rr.AssemblyAngularVelocity = Vector3.zero
     end)
+    -- v7.1f: إذا طرنا خارج مدى البرومبت (ري-كاست الأرض كان يرمينا تحت الصندوق) نعيد الوقوف فوقه
+    if flatDist(rr.Position, part.Position) > 12 then
+      tpTo(part.Position + Vector3.new(0, CFG.DROP_TP_ABOVE + 2, 0), false)
+      task.wait(0.1)
+      tpTo(part.Position)
+      task.wait(0.1)
+    end
     for i = 1, #prompts do
       local p = prompts[i]
       if p and p.Parent then activatePrompt(p, tries > 2, 0.8) end
     end
+    -- v7.1f: الإثبات كان pr=0 — كائن الدروب ما يحمل برومبت، والبرومبت («التقاط العناصر»)
+    -- في كائن ثاني قربه. نلاحقه بالبحث حوله ونضغطه، بدل الاعتماد على كاش البرومبتات حولنا.
+    local pk = PICK.near(CFG.DROP_PR_RADIUS, part.Position)
+    pkCount = #pk
+    for _, entry in ipairs(pk) do
+      local pp = entry.prompt
+      if pp and pp.Parent then activatePrompt(pp, tries > 2, 1.0) end
+    end
+    -- v7.1g: ما نضغط «أي برومبت قريب» — هذا كان سبب التعليق على برومبت عشوائي
+    -- («اجلس»/«ارتداء»/باب/مركبة). نضغط فقط برومبتات الدروب نفسها أو برومبت التقاط صريح.
     local live = getNearbyPrompts(15)
-    liveCount = #live
+    liveCount = 0
     for _, entry in ipairs(live) do
       local pp = entry.prompt
-      if pp and pp.Parent and not isBlockedPrompt(pp) then activatePrompt(pp, tries > 3, 1.0) end
+      if pp and pp.Parent and not isBlockedPrompt(pp) and PICK.isPickup(PICK.text(pp)) then
+        liveCount = liveCount + 1
+        activatePrompt(pp, tries > 3, 1.0)
+      end
     end
     if isDropPassShown() then opened = true; why = "quiz"; break end
     touchObj(part)
@@ -1411,8 +1872,18 @@ local function handleDrop(target, kind)
     pressE(0.5)
     if isDropPassShown() then opened = true; why = "E"; break end
     task.wait(0.12)
+    -- خروج مبكر: مافي أي شيء قابل للضغط = الدروب شبح، ما نبيض 8 ثواني وهو يحدّق
+    if tries >= 3 and #prompts == 0 and pkCount == 0 and liveCount == 0 then why = "no-prompt"; break end
   end
-  logMs("DROP_OPEN", openT0, (opened and "zOK" or "zFAIL") .. (" zWhy=%s zTries=%d zLive=%d"):format(why, tries, liveCount))
+  local setCount = 0
+  for _ in pairs(promptSet) do setCount = setCount + 1 end
+  logMs("DROP_OPEN", openT0, (opened and "zOK " or "zFAIL ")
+    .. ("zWhy=%s zTries=%d zLive=%d zPk=%d zPr=%d zSet=%d"):format(why, tries, liveCount, pkCount, #prompts, setCount))
+  -- الدروب الشبح: نسجّله دقيقتين حتى ما يرجع يقطع المشي كل 8 ثوانٍ
+  if not opened and #prompts == 0 and pkCount == 0 and liveCount == 0 then
+    ST.dropBlack[target] = tick() + 120
+    addLog("zDROP phantom — مسجّل دقيقتين (برومبت عشوائي مو دروب)")
+  end
 
   -- 3) الكويز — v7.1d: نافذة كاملة دائمًا (النسخة القديمة كانت تراقب 15ث بدون شرط).
   --    كان ينقطع بعد 2.5 ثانية إذا مرحلة الفتح ما انجحت، فالمعادلة تطلع بعده وما تنحل.
@@ -1448,6 +1919,8 @@ local lastDropScanLog = 0
 requestDrop = function(obj, kind, why)
   if _G.StopAutoFarm or not ST.autoDrop then return end
   if not obj or not obj.Parent then return end
+  -- دروب شبح مسجّل أخيرًا = ما نعيد المحاولة عليه (كان يقطع المشي كل 8 ثوانٍ للأبد)
+  if (ST.dropBlack[obj] or 0) > tick() then return end
   if ST.busyDrop then ST.dropRequested = true; return end
   if obj == ST.lastDropObj and (tick() - ST.lastDropAt) < CFG.DROP_RETRY_CD then return end
   local seen = dropSeen[obj]
@@ -1511,7 +1984,12 @@ task.spawn(function()
       elseif tick() - lastDropScanLog > 60 then
         lastDropScanLog = tick()
         local f = workspace:FindFirstChild("Drops")
-        addLog(("zDROP scan: Drops=%s"):format(f and tostring(#f:GetChildren()) or "none"))
+        -- v7.1f: نشخيص أدق — عدد البرومبتات المرصودة وعدد برومبتات الالتقاط القريبة،
+        -- عشان نفرّق بين «ما فيه دروب» و«فيه دروب بس مو تحت workspace.Drops»
+        local n = 0
+        for _ in pairs(promptSet) do n = n + 1 end
+        addLog(("zDROP scan: Drops=%s zSet=%s zPk=%s"):format(
+          f and tostring(#f:GetChildren()) or "none", tostring(n), tostring(#PICK.near(120))))
       end
     end
   end
@@ -1789,6 +2267,16 @@ local function lootCyberCave(force)
       addLog("📡 إشارة فتح باب جديدة أثناء الكولداون — بنجرّبها الحين")
     end
   end
+  -- v7.1f: الـ50 انلقتت فعلًا بهالفتحة؟ نكمل عادي — كان يروح للباب المفتوح كل مرة
+  -- ويعلق قدامه (وهو السبب اللي شافه المستخدم: الكهف مفتوح والنقاط أخذها قبل).
+  if not force and (ST.caveDoneAt or 0) > 0 and ST.caveDoneAt >= (ST.cyberSignalAt or 0) - 5 then
+    ST.cyberPending = false; ST.cyberSignalAt = 0
+    if tick() - (ST.lastCyberLog or 0) > 20 then
+      ST.lastCyberLog = tick()
+      addLog("✅ الكهف: الـ50 مأخوذة بهالفتحة — نكمل طريقنا zCAVE skip")
+    end
+    return
+  end
   local signaled = force or freshSignal
 
   -- لا نقاطع دروباً قيد التنفيذ ولا مهمة الأجواء ولا التسليم (الإشارة تُصفَّف لو تأخر)
@@ -1861,6 +2349,7 @@ local function lootCyberCave(force)
   local got = false
   local lastCaveLog = 0
   local lastWalkEnd = 0
+  local lastD3, lastProgAt = 999, tick()
   while tick() - t0 < CFG.CYBER_STAY and not _G.StopAutoFarm and (ST.autoCyber or force) do
     if not alive() then
       logMs("CYBER_CAVE", t0, "zFAIL zWhy=died")
@@ -1871,12 +2360,21 @@ local function lootCyberCave(force)
     -- كل 0.25 ثانية وهو مكان المشي الصحيح، ويتقاطع مع أي دروب ظاهر
     local rr = hrp()
     local far = rr and flatDist(rr.Position, CFG.CYBER_CAVE_POS) or 999
+    -- v7.1g: التقدم يُقاس بالـ3 أبعاد — أفقي فقط كان يعتبر «فوق فتحة الكهف» وصول
+    local d3 = rr and (rr.Position - CFG.CYBER_CAVE_POS).Magnitude or 999
+    local yOff = rr and math.abs(rr.Position.Y - CFG.CYBER_CAVE_POS.Y) or 999
+    if d3 < lastD3 - 3 then lastD3 = d3; lastProgAt = tick() end
+    if d3 > 8 and tick() - lastProgAt > 22 then
+      logMs("CYBER_CAVE", t0, ("zFAIL zWhy=no-progress zD3=%.0f zYoff=%.0f"):format(d3, yOff))
+      endCyberVisit("⚠️ الكهف: 22 ثانية بلا تقدم — نطلع ونكمل الدروب/المهمة zCAVE bail")
+      return
+    end
     if tick() - (lastCaveLog or 0) > 6 then
       lastCaveLog = tick()
       addLog(("zCAVE d=%.1f y=%.1f/%.1f pts=%s zWalkEnd=%.0f"):format(far,
         rr and rr.Position.Y or -1, CFG.CYBER_CAVE_POS.Y, tostring(getPointsValue()), lastWalkEnd))
     end
-    if far > 2.5 then
+    if far > 2.5 or yOff > 6 then
       local wt = tick()
       local res = walk(CFG.CYBER_CAVE_POS, 10, false, "cyber")
       lastWalkEnd = math.floor((tick() - wt) * 10) / 10
@@ -1895,6 +2393,17 @@ local function lootCyberCave(force)
         end
       end
     else
+      -- v7.1g: قاعدين عند نقطة الـ50 والنقاط ما نزلت ودروب قدامنا = ما نخلي الدروب
+      -- يضيع ونحن مشغولين. (قبل: busyCyber كان يوقف الدروب وضغطة E 45 ثانية كاملة)
+      if ST.autoDrop and not ST.busyDrop and not hasCrate() and tick() - lastProgAt > 12 then
+        local dd, dk = findActiveDrop()
+        if dd then
+          logMs("CYBER_CAVE", t0, "zDROP-atPoint")
+          endCyberVisit("🚨 دروب عند نقطة الكهف والنقاط ما نزلت — نلحقه الحين")
+          requestDrop(dd, dk, "كهف-نقطة")
+          return
+        end
+      end
       task.wait(0.4)
     end
     local now = getPointsValue()
@@ -1903,6 +2412,7 @@ local function lootCyberCave(force)
 
   -- 3) النقاط تُقاس من leaderstats.Points — لا ريستارت، نكمل مشي طبيعي
   if got then
+    ST.caveDoneAt = tick()
     ST.stats.cyberPoints = ST.stats.cyberPoints + CFG.CYBER_POINTS
     ST.score = ST.score + CFG.CYBER_POINTS
     updateStats()
@@ -1968,6 +2478,7 @@ local function cyberSignal(reason)
   if _G.StopAutoFarm or not ST.autoCyber then return end
   ST.cyberSignalAt = tick()
   ST.cyberPending = true
+  ST.caveDoneAt = 0   -- v7.1f: فتحة باب جديدة = الـ50 مطلوبة من جديد
   addLog((" إشارة كهف: %s"):format(reason))
 end
 local function cyberTick()
@@ -2164,9 +2675,9 @@ if REM.ShowTarget then
     if _G.StopAutoFarm then return end
     if not tp then
       ST.missionOn=false; ST.target=nil; ST.missionAliveAt=0
-      missionUICache.at = -1
+      ST.mUI.at = -1
       markMissionEnd("showtarget-nil")
-      addLog("اكتملت المهمة — كول داون 3 دقائق ثم نبدأ تلقائيًا")
+      addLog(("اكتملت المهمة — كول داون %d ثانية ثم نبدأ تلقائيًا"):format(CFG.MISSION_COOLDOWN))
       return
     end
     ST.target=tp; ST.isPickup=(isPick==true); ST.boxIndex=cnt or ST.boxIndex; ST.totalBoxes=tot or 5; ST.missionOn=true
@@ -2243,14 +2754,14 @@ end
 
 -- v7.1b: شارة المهمة تُقرأ من واجهة اللعبة نفسها (BoxMission: «1 / 5» + تخطي).
 -- بدون هذي كان يبدأ مهمة فوق مهمة شغالة ويغرق اللوق بـ MISSION_START zFAIL
-local missionUICache = {at = -1, on = false}
 local function isMissionUIActive(force)
   -- v7.1f: كاش 0.25 ثانية — كانت تُنادى كل 0.08 ثانية داخل نافذة قبول المهمة
   -- وتكنس كل نسل BoxMission بـ pcall لكل واحد (تعليق واضح على الموبايل)
-  if not force and tick() - missionUICache.at < 0.25 then return missionUICache.on end
-  missionUICache.at = tick()
+  local mUI = ST.mUI
+  if not force and tick() - mUI.at < 0.25 then return mUI.on end
+  mUI.at = tick()
   local g = pg:FindFirstChild("BoxMission")
-  if not g then missionUICache.on = false; return false end
+  if not g then mUI.on = false; return false end
   local on = false
   pcall(function()
     if g.Enabled == false then return end
@@ -2268,7 +2779,7 @@ local function isMissionUIActive(force)
       end
     end
   end)
-  missionUICache.on = on
+  mUI.on = on
   return on
 end
 
@@ -2603,7 +3114,7 @@ local function runMissionCycle()
         ST.missionOn = false
         ST.target = nil
         ST.missionAliveAt = 0
-        missionUICache.at = -1
+        ST.mUI.at = -1
         markMissionEnd("last-box-delivered")
       else
         setCdAt(tick() + 0.6)
@@ -2745,10 +3256,9 @@ local function disableFullbright()
 end
 
 -- [الحماية]
-local CUFF_WORDS = {"cuff","handcuff","arrest","restrain","zip","taze","stun","freeze","مصفاد","كلبش","تقييد","قيد","أغلال","اغلال","زنجير","تكتيف","ربط"}
 local function isCuffName(s)
   s = tostring(s or ""):lower()
-  for _, w in ipairs(CUFF_WORDS) do if s:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.CUFF) do if s:find(w, 1, true) then return true end end
   return false
 end
 local function purgeCuffInst(inst)
@@ -2898,15 +3408,14 @@ local function runAntiBullet()
 end
 
 -- [Anti-Jail]
-local JAIL_WORDS = {"jail","prison","cell","detention","سجن","زنزانة","معتقل","حبس"}
-local jailCache, jailCacheAt = {}, 0
+local jailCache = {}   -- .at = آخر تحديث (حقل عشان ما يكلّف خانة local)
 local function nameIsJail(n)
   n = tostring(n or ""):lower()
-  for _, w in ipairs(JAIL_WORDS) do if n:find(w, 1, true) then return true end end
+  for _, w in ipairs(WORDS.JAIL) do if n:find(w, 1, true) then return true end end
   return false
 end
 local function refreshJailCache()
-  jailCache = {}; jailCacheAt = tick()
+  jailCache = {}; jailCache.at = tick()
   local function walk(inst, depth)
     if depth > 3 then return end
     for _, d in ipairs(inst:GetChildren()) do
@@ -2925,7 +3434,7 @@ local function refreshJailCache()
   pcall(walk, workspace, 0)
 end
 local function detectJail(pos)
-  if tick() - jailCacheAt > 60 then refreshJailCache() end
+  if tick() - (jailCache.at or 0) > 60 then refreshJailCache() end
   for _, jp in ipairs(jailCache) do
     if jp.Parent and (jp.Position - pos).Magnitude < 45 then return true end
   end
@@ -3143,11 +3652,11 @@ addC(RUN.Heartbeat:Connect(function()
   if ST.antiSitOn then local h = hum(); if h then if h.Sit then h.Sit = false end; local st = h:GetState(); if st == Enum.HumanoidStateType.Ragdoll or st == Enum.HumanoidStateType.FallingDown then h:ChangeState(Enum.HumanoidStateType.GettingUp) end end end
 end))
 
-local hbAcc, noclipAcc, invisAcc = 0, 0, 0
+local HB = {main = 0, noclip = 0, invis = 0}   -- مجمّعة في جدول: كل local فوق يكلّف خانة من حد Luau
 local appliedFov = -1
 addC(RUN.Heartbeat:Connect(function(dt)
   if _G.StopAutoFarm then return end
-  hbAcc = hbAcc + (dt or 0.016)
+  HB.main = HB.main + (dt or 0.016)
   local h, r = hum(), hrp(); if not h or not r or not alive() then return end
   if r.Position.Y < -100 then pcall(function() r.AssemblyLinearVelocity = Vector3.zero; r.AssemblyAngularVelocity = Vector3.zero; char():PivotTo(CFrame.new(CFG.SAFE_POS)) end) end
   if ST.customSpeedOn and not ST.handlingDrop and not ST.flyOn then h.WalkSpeed = ST.walkSpeed end
@@ -3165,16 +3674,16 @@ addC(RUN.Heartbeat:Connect(function(dt)
   -- v7.1f: نوكليب/اختفاء بحد زمني (20hz / 4hz) بدل كنس descendants كل فريم،
   -- و FOV ما ينكتب إلا إذا تغيّر فعلًا — كتابة الخاصية كل فريم تجرّ تحديث كاميرا
   if ST.noclipOn then
-    noclipAcc = noclipAcc + (dt or 0.016)
-    if noclipAcc >= 0.05 then
-      noclipAcc = 0
+    HB.noclip = HB.noclip + (dt or 0.016)
+    if HB.noclip >= 0.05 then
+      HB.noclip = 0
       local c = char(); if c then for _, p in ipairs(c:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end end
     end
   end
   if ST.invisOn then
-    invisAcc = invisAcc + (dt or 0.016)
-    if invisAcc >= 0.25 then
-      invisAcc = 0
+    HB.invis = HB.invis + (dt or 0.016)
+    if HB.invis >= 0.25 then
+      HB.invis = 0
       local c = char(); if c then
         for _, d in ipairs(c:GetDescendants()) do
           if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 1 then d.Transparency = 1
@@ -3188,8 +3697,22 @@ addC(RUN.Heartbeat:Connect(function(dt)
     pcall(function() cam.FieldOfView = appliedFov end)
   end
   if ST.antiFling then local vel = r.AssemblyLinearVelocity; if vel.Magnitude > 120 then r.AssemblyLinearVelocity = Vector3.zero; r.AssemblyAngularVelocity = Vector3.zero end end
-  if hbAcc >= 1 then
-    hbAcc = 0
+  if HB.main >= 1 then
+    HB.main = 0
+    -- v7.1f: عدّاد نقاط الكهف — أي +50 نقاط ونحن قرب الكهف (حتى لو أخذها اللاعب بنفسه)
+    -- تُحسب لهذه الفتحة، فما نرجع نعلق قدام الباب المفتوح.
+    local pv = getPointsValue()
+    if pv and pv > 0 then
+      local base = ST.cavePtsSeen
+      local d = pv - base
+      if base > 0 and d >= CFG.CYBER_POINTS and d < 200 and flatDist(r.Position, CFG.CYBER_CAVE_POS) < 45 then
+        ST.caveDoneAt = tick()
+        if tick() - (ST.lastCyberLoot or 0) > 5 then ST.lastCyberLoot = tick() end
+        ST.cyberPending = false; ST.cyberSignalAt = 0
+        addLog("✅ زCAVE done +50 pts — ما نعاود ندخل هالفتحة")
+      end
+      ST.cavePtsSeen = pv
+    end
     if ST.busyDrop and ST.busyDropSince > 0 and (tick() - ST.busyDropSince) > 60 then ST.busyDrop = false; ST.handlingDrop = false; ST.dropRequested = false end
     if ST.busyCyber and ST.busyCyberSince > 0 and (tick() - ST.busyCyberSince) > 45 then ST.busyCyber = false; ST.busyCyberSince = 0 end
   end
@@ -3294,7 +3817,7 @@ local function buildGui()
   mkFlyBtn("↑", 80, -200, "W"); mkFlyBtn("↓", 80, -120, "S"); mkFlyBtn("←", 20, -160, "A"); mkFlyBtn("→", 140, -160, "D"); mkFlyBtn("⬆", 300, -200, "Up"); mkFlyBtn("", 300, -120, "Down")
   local floatBtn = Instance.new("TextButton", mobGui); floatBtn.Size = UDim2.new(0, 54, 0, 54); floatBtn.Position = UDim2.new(0, 14, 0.45, 0)
   floatBtn.BackgroundColor3 = Color3.fromRGB(14, 24, 38); floatBtn.BackgroundTransparency = 0.15
-  floatBtn.Text = "v7.1"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
+  floatBtn.Text = "v7.1h"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
   floatBtn.Font = Enum.Font.GothamBold; floatBtn.Active = true; floatBtn.Draggable = true
   Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
   local fStroke = Instance.new("UIStroke", floatBtn); fStroke.Thickness = 1.5; fStroke.Transparency = 0.15
@@ -3320,10 +3843,10 @@ local function buildGui()
   Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
   grad(header, Color3.fromRGB(22, 31, 50), Color3.fromRGB(13, 18, 30), 0)
   local title = Instance.new("TextLabel", header); title.Size = UDim2.new(1, -230, 0, 22); title.Position = UDim2.new(0, 16, 0, 7)
-  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1f"; title.TextColor3 = P.text
+  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1h"; title.TextColor3 = P.text
   title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
   local subtitle = Instance.new("TextLabel", header); subtitle.Size = UDim2.new(1, -230, 0, 14); subtitle.Position = UDim2.new(0, 16, 0, 26)
-  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Data-Driven • Smart 10m Hop • 3-min Cooldown"; subtitle.TextColor3 = P.muted
+  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Cave Floor Lock • Random 10-15m Unstuck • Forced TP • E every 3s • 150s CD"; subtitle.TextColor3 = P.muted
   subtitle.Font = Enum.Font.Gotham; subtitle.TextSize = 9; subtitle.TextXAlignment = Enum.TextXAlignment.Left
   local helpBtn = Instance.new("TextButton", header); helpBtn.Size = UDim2.new(0, 28, 0, 28); helpBtn.Position = UDim2.new(1, -206, 0, 9)
   helpBtn.BackgroundColor3 = P.row; helpBtn.BackgroundTransparency = 0.15; helpBtn.Text = "؟"
@@ -3465,10 +3988,10 @@ local function buildGui()
       addLog("⏹️ الكهف: إيقاف فوري")
     else addLog("▶️ الكهف: تشغيل (ينتظر إشارة فتح الباب فقط)") end
   end)
-  mkToggle(c1b, "الانتقال التلقائي عند التعليق", 286, 38, 266, 28, true, function(v)
+  mkToggle(c1b, "النقلة الذكية عند التعليق", 286, 38, 266, 28, true, function(v)
     ST.emergencyTpOn = v
-    if not v then addLog("⏹️ الانتقال التلقائي: إيقاف")
-    else addLog("▶️ الانتقال التلقائي: تشغيل (فوري بعد 1.5 ثانية)") end
+    if not v then addLog("⏹️ النقلة الذكية: إيقاف")
+    else addLog("▶️ النقلة الذكية: تشغيل (10 أمتار بعد 0.55s تعليق، وبعدها انتقال سريع للفرار)") end
   end)
   mkToggle(c1b, "جوائز وقت اللعب", 8, 70, 266, 28, true, function(v) ST.autoPlaytime = v end)
   mkAction(c1b, "🎁 استلام جوائز", 286, 70, 266, 28, Color3.fromRGB(30, 92, 74), claimRewardsManually)
@@ -3573,10 +4096,10 @@ local function buildGui()
     else addLog("إحداثيات خاطئة") end
   end)
   local c2g = mkCard(t2, 40, 342, P.gold)
-  mkLabel(c2g, "الانتقال التلقائي عند التعليق (فوري بعد 1.5 ثانية)", 10, 8, 350, 24, 11)
-  mkToggle(c2g, "انتقال", 420, 6, 120, 28, true, function(v)
+  mkLabel(c2g, "النقلة الذكية + الفرار السريع (10م ثم انتقال عند الانحباس)", 10, 8, 350, 24, 11)
+  mkToggle(c2g, "نقلة", 420, 6, 120, 28, true, function(v)
     ST.emergencyTpOn = v
-    addLog(v and "🚑 الانتقال التلقائي: ON" or "الانتقال التلقائي: OFF")
+    addLog(v and "🚑 النقلة الذكية: ON" or "النقلة الذكية: OFF")
   end)
   local t3 = tabs[3]
   local c3a = mkCard(t3, 44, 0)
@@ -3754,7 +4277,7 @@ local function buildGui()
   mkLabel(c5i, "🚫 الحماية المتقدمة", 10, 6, 320, 20, 12)
   mkToggle(c5i, "منع الرصاص", 10, 36, 170, 30, true, function(v) ST.antiBullet = v; addLog(v and "🚫 منع الرصاص ON" or "منع الرصاص: OFF") end)
   mkToggle(c5i, "منع السجن", 190, 36, 170, 30, true, function(v)
-    ST.antiJail = v; ST.lastSafePos = nil; ST.jailAttempts = 0; jailCacheAt = 0
+    ST.antiJail = v; ST.lastSafePos = nil; ST.jailAttempts = 0; jailCache.at = 0
     addLog(v and "🚫 منع السجن ON" or "منع السجن: OFF")
   end)
   mkToggle(c5i, "إخفاء الاسم", 370, 36, 175, 30, false, function(v)
@@ -3943,18 +4466,18 @@ task.spawn(function() while not _G.StopAutoFarm do
   updateStats()
 end end)
 
-addLog("AUTOFARM v7.1f جاهز 👑")
-addLog("✅ كول داون: 3 دقائق بالضبط بعد كل مهمة — بلا بدء مبكر وبلا لخبطة مشي")
+addLog("AUTOFARM v7.1h جاهز 👑")
+addLog("✅ كول داون: 150 ثانية (دقيقتين ونص) بعد كل مهمة — بلا بدء مبكر وبلا لخبطة مشي")
 addLog("✅ النقلة الذكية: 10 أمتار للأمام على المسار عند أول تعليق (كانت انتقال كامل للوجهة)")
-addLog("✅ الكهف: مشي فقط + ما يعيد بناء المسار وهو واقف على نقطة الـ50 + منطقة محرمة على النقلة")
+addLog("✅ الكهف: مشي فقط + الـ50 تُحسب مرة وحدة لكل فتحة باب (ما يعلق قدام الباب المفتوح)")
 addLog("✅ خفة: كنسات CoreGui/Workspace كلها صارت كاش + أحداث — أندرويد ما يجمّد")
 addLog("✅ الدروب: انتقال فوري فوقه + ضغط برومبته (لا مشي، لا انتظار)")
 addLog("✅ الكويز: يقرأ المعادلة المرسلة من السيرفر + يتتبع مربع الكتابة بدل كنس الواجهات")
 addLog("✅ المهام: ما يروح المستودع إلا بهدف من السيرفر أو شارة مهمة ظاهرة")
 addLog("✅ الكهف: التأكيد من leaderstats.Points (+50) والفتح من NotiEvent")
 addLog("🌦️ مهمة الأجواء: زّر منفصل (مطفية افتراضيًا) وما توقف الكهف ولا الدروب")
-addLog("📋 تشخيص: zMISSION zCD zHOP zDROP zQUIZ zCAVE zTIME zCYBER zWEATHER")
+addLog("📋 تشخيص: zMISSION zCD zHOP zESC zFORCE zRND zDROP zQUIZ zCAVE zTIME zCYBER zWEATHER")
 addLog("جرّب: زر «📦 تجربة الدروب الآن» يطلّع zDROP فورًا")
 addLog("Home = إخفاء/إظهار | End = إيقاف")
 updateStats()
-print("[v7.1f] Ready — exact 180s mission cooldown, smart 10-stud forward hop on slight stall, walk-only cyber cave with hop-free zone, mobile-friendly caches (quiz GUI tracked by TextBox events, negative drop cache, throttled defense/heartbeat sweeps), teleport drops + real E-press")
+print("[v7.1h] Ready — cave walks to the FLOOR (Y checked, never the roof above the opening), random 6-15m unstuck hop (zRND) when stuck, hops allowed inside the cave ring (crossing into it is still walk-only), cave bails after 22s of no progress (zCAVE bail) so drops/E keep working, E press for pickup prompts every 3s even during a cave visit, 150s mission cooldown, forced teleport to destination (zFORCE), prompt-based drop pickup, mobile-friendly caches")
