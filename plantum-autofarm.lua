@@ -1,5 +1,5 @@
 -- ============================================================
--- 👑 AUTOFARM v7.1i (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
+-- 👑 AUTOFARM v7.1k (Locas) — مبني على v9.0 + استرجاع كل شيء ناقص
 -- ════════════════════════════════════════════════════════════
 -- [الإصلاحات الجوهرية]
 --   [1] كشف الصندوق: اسم موجب + تعلّم ذاتي (يصلح "ما يكشف دروبات")
@@ -76,6 +76,30 @@
 --  [32] الكويز: إعادة نفس المعادلة كانت تنتظر 2.5 ثانية → 1.2. وضغطة E الدورية صارت
 --       تفتح برومبت «السحب» (HoldDuration) بـ InputHold بدل ضغطة قصيرة ما تفتح شي.
 -- ════════════════════════════════════════════════════════════
+-- ── v7.1j (آلية فتح الدروب من نسخته القديمة المجرّبة — الدروب فقط) ──
+--  [33] getDropPassElements: كان يبحث بالاسم عن اللقطة بس، والمربع والزر من heuristic
+--       عام. لو الكاش العام أخطأ الواجهة = txtBox nil → السكربت «يكتب» وما يكتب شي.
+--       الحين كنس مباشر لواجهة DropPass يجيب اللقطة ومربع الكتابة وزر Apply بالاسم،
+--       وباحتياطي على نص المعادلة نفسها لو تغيّرت الأسماء بعد تحديث الماب.
+--  [34] isDropPassShown: نفس النسخة القديمة — وجود مربع كتابة ظاهر داخل DropPass مع
+--       نص يتحلّل لمعادلة = كويز مفتوح، بدون ما نشرط اسم «Quez» الحرفي.
+--  [35] writeAnswer: إضافة firesignal(txtBox.FocusLost, true) — واجهات تقرأ الجواب من
+--       الحدث مو من النص. و cleanText يقبل «3 x 9» بحرف إكس بين رقمين.
+--  [36] الفتح: Tier أخير بعد 5 محاولات فاشلة يضغط أي برومبت في 6 أمتار من الدروب نفسه
+--       (مو من الشخصية) — مستبعد برومبت الشخصية/الأداة والكلمات الممنوعة، فما يعلّق
+--       على «اجلس/ارتداء/باب». zQUIZ no-box / no-btn / write-fail و zBrute للدليل.
+-- ════════════════════════════════════════════════════════════
+-- ── v7.1k (سرعة الفتح: من 15 ثانية إلى أقل من 3) ───────────
+--  [37] سبب التأخير الحقيقي طلع داخل حلقة الفتح: كل مرشح كان يمسك InputHold ثانية
+--       كاملة، فخمسة برومبتات = 5-6 ثواني في محاولة وحدة والنافذة (8ث) تروح كلها.
+--       الحين المرشحين يتلمّون بلا تكرار، وكل واحد ينضغط ضغطة فورية (بلا انتظار)
+--       وفحص الكويز بعد كل ضغطة؛ والـhold ما يصير إلا على أقرب مرشح وبعد المحاولة 3.
+--       النافذة 8→4 ثواني، والمعاودة 8→5، فالكلمة اللي ما انفتحت ما تحتجز السكربت.
+--  [38] Tier النسخة القديمة (أي برومبت في 10 أمتار من الدروب نفسه) يبدأ من المحاولة 3
+--       بدل 5 — ونبقى مستبعدين برومبت الشخصية/الأداة والكلمات الممنوعة، ومقفول داخل
+--       منطقة الكهف (الكهف مشي فقط). الكويز: فحص 0.3→0.12 ثانية وإعادة نفس المعادلة
+--       1.2→0.6، فتأكيد الجواب ما ينتظر. zWhy=quick/hold يقول أي ضغطة فتحت الصندوق.
+-- ════════════════════════════════════════════════════════════
 
 if _G.__FINAL_STOP then pcall(_G.__FINAL_STOP) end
 _G.StopAutoFarm = false
@@ -140,10 +164,10 @@ local CFG = {
   -- v7.1: الدروب ما يمشي له — ينتقل فوقه وينزل تحته ويضغط
   DROP_TP         = true,
   DROP_TP_ABOVE   = 5,
-  -- v7.1g: نافذة الفتح 8 ثوانٍ — أطول منها كانت تخلّي السكربت يحدّق ببرومبت عشوائي
-  -- ويحسبه دروب (واللاعب يبين خامل). الخروج المبكر إذا ما فيه برومبت مرشّح أصلًا.
-  DROP_OPEN_MS    = 8,
-  DROP_RETRY_CD   = 8,
+  -- v7.1k: نافذة الفتح 4 ثوانٍ (كانت 8 وكل برومبت يمسك hold ثانية = «يتأخر 15 ثانية»).
+  -- الضغطة الأولى تصير بعد أقل من ثانية على ظهور E، وإذا فشل نطلع ونعاود بعد 5 ثوانٍ.
+  DROP_OPEN_MS    = 4,
+  DROP_RETRY_CD   = 5,
   -- v7.1f: ضغط E دوري (مثل اللاعب الحقيقي) — ما يمسك أي برومبت ممنوع ولا يشتغل وقت الإيقاف
   E_PRESS_CD      = 3,
   -- v7.1f: نطاق البحث عن برومبت الالتقاط بعد ما نقف فوق الدروب (studs)
@@ -244,7 +268,7 @@ local function addLog(s)
   logBuf[#logBuf+1]=("[%s] %s"):format(os.date("%H:%M:%S"),s)
   if #logBuf>60 then table.remove(logBuf,1) end
   ST.logDirty = true
-  print("[v7.1i]",s)
+  print("[v7.1k]",s)
 end
 task.spawn(function()
   while not _G.StopAutoFarm do
@@ -292,7 +316,7 @@ local function shutdown()
     pcall(function() cam.FieldOfView=70 end)
     for _,n in ipairs({"FinalFixGui","FinalFixMobileBtn","MobileFlyGui","WeatherAutoGui"}) do local g=pg:FindFirstChild(n); if g then g:Destroy() end end
   end)
-  print("[v7.1i] Stopped")
+  print("[v7.1k] Stopped")
 end
 _G.__FINAL_STOP=shutdown
 
@@ -919,6 +943,9 @@ local function cleanText(t)
   local s = raw
   for ar,en in pairs(WORDS.AR) do s = s:gsub(ar,en) end
   for k,v in pairs(WORDS.OP) do s = s:gsub(k,v) end
+  -- v7.1j: من النسخة القديمة — «3 x 9» بحرف إكس اللاتيني مش ضرب، وما نقدر نبدّل
+  -- الحرف عامةً (يخرّب الكلمات)، فنبديله بس بين رقمين.
+  s = s:gsub("(%d)%s*[xX×]%s*(%d)", "%1*%2")
   cleanMemo.__n = cleanMemo.__n + 1
   if cleanMemo.__n > 400 then cleanMemo = {__n = 0} end
   cleanMemo[raw] = s
@@ -1116,16 +1143,46 @@ local function pickApplyBtn(btns)
   return big
 end
 
+-- v7.1j: النسخة القديمة المثبتة كانت تجيب المربع والزر بكنس «مباشر» لواجهة DropPass
+-- بالاسم، مو heuristic. إذا الكاش العام ما لقط واحد منهم (اسم متغيّر بعد تحديث الماب)
+-- كان السكربت يظل «ما يكتب شي» والواجهة قدامه. الحين: كل عنصر له مسار مباشر احتياطي.
 local function getDropPassElements()
   local s = scanQuiz()
-  local quez = s.lbl
-  if not quez then
-    local dp = pg:FindFirstChild(CFG.QUIZ_GUI)
-    if dp then for _, d in ipairs(dp:GetDescendants()) do
-      if d:IsA("TextLabel") and d.Visible and guiShown(d.Parent, dp) and (d.Name == CFG.QUIZ_LABEL or d.Name:lower():find("quez", 1, true)) then quez = d; break end
-    end end
+  local quez, box, applyBtn = s.lbl, s.box, pickApplyBtn(s.btns)
+  local dp = pg:FindFirstChild(CFG.QUIZ_GUI)
+  if dp and (not quez or not box or not applyBtn) then
+    local okd, desc = pcall(function() return dp:GetDescendants() end)
+    if okd and desc then
+      for _, d in ipairs(desc) do
+        if d:IsA("GuiObject") and d.Visible and d.AbsoluteSize.X > 4 and d.AbsoluteSize.Y > 4 and guiShown(d.Parent, dp) then
+          if not quez and d:IsA("TextLabel")
+            and (d.Name == CFG.QUIZ_LABEL or d.Name:lower():find("quez", 1, true)) then
+            quez = d
+          elseif not box and d:IsA("GuiTextBox") then
+            box = d
+          elseif not applyBtn and d:IsA("TextButton") then
+            local par = d.Parent
+            if par and (par.Name == "Apply" or par.Name:lower():find("apply", 1, true)) then applyBtn = d end
+          end
+        end
+      end
+      if not quez then
+        for _, d in ipairs(desc) do
+          if d:IsA("TextLabel") and d.Visible and d.AbsoluteSize.X > 5 and guiShown(d.Parent, dp)
+            and d.Text and d.Text:match("%d") and parseEq(d.Text) then quez = d; break end
+        end
+      end
+      if not applyBtn then
+        for _, d in ipairs(desc) do
+          if d:IsA("TextButton") and d.Visible and d.AbsoluteSize.X > 50 and guiShown(d.Parent, dp)
+            and not isNoClickText(((d.Name or "") .. " " .. (d.Text or "")):lower()) then
+            applyBtn = d; break
+          end
+        end
+      end
+    end
   end
-  return quez, s.box, pickApplyBtn(s.btns)
+  return quez, box, applyBtn
 end
 
 local function isDropPassShown()
@@ -1138,6 +1195,17 @@ local function isDropPassShown()
     for _, d in ipairs(dp:GetDescendants()) do
       if d:IsA("TextLabel") and d.Name == CFG.QUIZ_LABEL and d.Visible and d.AbsoluteSize.X > 5 and guiShown(d.Parent, dp) then return true end
     end
+    -- v7.1j: اسم اللقطة تغيّر بعد تحديث الماب؟ نكتفي بواجهة DropPass فيها مربع كتابة
+    -- ظاهر ومعادلة تُحل — هذا شرط النسخة القديمة نفسه، وشارة المهمة ما فيها مربع.
+    local hasBox, hasEq = false, false
+    for _, d in ipairs(dp:GetDescendants()) do
+      if d:IsA("GuiObject") and d.Visible and d.AbsoluteSize.X > 4 and guiShown(d.Parent, dp) then
+        if d:IsA("GuiTextBox") then hasBox = true
+        elseif (d:IsA("TextLabel") or d:IsA("TextButton")) and d.Text
+          and d.Text:match("%d") and parseEq(d.Text) then hasEq = true end
+      end
+    end
+    if hasBox and hasEq then return true end
   end
   return false
 end
@@ -1156,6 +1224,14 @@ local function writeAnswer(txtBox, value)
   task.wait(0.04)
   if txtBox.Text == s then return true end
   pcall(function() txtBox.Text = s end); task.wait(0.04)
+  if txtBox.Text == s then return true end
+  -- v7.1j: آخر حيلة من النسخة القديمة — نكتب ونطلق FocusLost بنفسنا، فبعض الواجهات
+  -- تقرأ الجواب من الحدث مو من النص (تكتب ولا ينفع).
+  pcall(function()
+    txtBox.Text = s
+    if firesignal then firesignal(txtBox.FocusLost, true) end
+  end)
+  task.wait(0.06)
   return txtBox.Text == s
 end
 
@@ -1763,7 +1839,7 @@ local function solveQuizPass(isSecret, isBox)
   if raw == "" then return false end
   -- v7.1h: كان ينتظر 2.5 ثانية قبل إعادة نفس المعادلة — لو أول محاولة ما ضغطت «تأكيد»
   -- صح تضيع ثانيتين ونص من نافذة الـ15. 1.2 ثانية تكفي للسيرفر يرد.
-  if raw == ST.lastEq and (tick() - (ST.quizTriedAt or 0) < 1.2) then return false end
+  if raw == ST.lastEq and (tick() - (ST.quizTriedAt or 0) < 0.6) then return false end
   ST.lastEq = raw; ST.quizTriedAt = tick()
   local ans = parseEq(raw)
   if not ans then local ok, v = pcall(solveStr, raw); if ok and v then ans = v end end
@@ -1772,9 +1848,13 @@ local function solveQuizPass(isSecret, isBox)
     return false
   end
   addLog(("✏️ %s = %s"):format(raw, tostring(ans)))
-  local gone = false
+  -- v7.1j: «مو قاعد يكتب» كان بلا دليل — الحين كل سبب يطلع بعلامة ASCII
+  if not txtBox then addLog("zQUIZ no-box") end
+  if not applyBtn then addLog("zQUIZ no-btn") end
+  local gone, lastWrite = false, nil
   for round = 1, 4 do
-    if txtBox then writeAnswer(txtBox, ans) end
+    if txtBox then lastWrite = writeAnswer(txtBox, ans)
+      if not lastWrite and round == 4 then addLog("zQUIZ write-fail") end end
     if REM.Quiz then
       pcall(function() REM.Quiz:FireServer(ans) end)
       pcall(function() REM.Quiz:FireServer(tostring(ans)) end)
@@ -1847,11 +1927,12 @@ local function handleDrop(target, kind)
   local opened, why = false, "timeout"
   local openT0 = tick()
   local tries = 0
-  local liveCount, pkCount = 0, 0
+  local liveCount, pkCount, bruteCount = 0, 0, 0
   while (tick() - openT0) * 1000 < CFG.DROP_OPEN_MS * 1000 and not _G.StopAutoFarm and ST.autoDrop do
     tries = tries + 1
     if not target.Parent and not part.Parent then opened = true; why = "gone"; break end
     local rr = hrp(); if not rr then why = "no-hrp"; break end
+    local candSeen, cands = {}, {}
     pcall(function()
       rr.CFrame = CFrame.new(groundOf(part.Position))
       rr.AssemblyLinearVelocity = Vector3.zero
@@ -1864,29 +1945,54 @@ local function handleDrop(target, kind)
       tpTo(part.Position)
       task.wait(0.1)
     end
+    -- v7.1k: هذا كان سبب «يتأخر 15 ثانية». كل مرشح كان يمسك InputHold ثانية كاملة،
+    -- فخمسة برومبتات = 5-6 ثواني في المحاولة الواحدة والـ8 ثواني تروح كلها.
+    -- الحين: تجميع المرشحين (بلا تكرار) → ضغطة فورية بلا انتظار + فحص الكويز بعد كل
+    -- ضغطة، والـhold ما يصير إلا على أقرب مرشح وبعد المحاولة 3.
+    local pk = PICK.near(CFG.DROP_PR_RADIUS, part.Position)
+    pkCount = #pk
+    local live = getNearbyPrompts(15)
+    liveCount = 0
     for i = 1, #prompts do
       local p = prompts[i]
-      if p and p.Parent then activatePrompt(p, tries > 2, 0.8) end
+      if p and p.Parent and not candSeen[p] then candSeen[p] = true cands[#cands+1] = p end
     end
     -- v7.1f: الإثبات كان pr=0 — كائن الدروب ما يحمل برومبت، والبرومبت («التقاط العناصر»)
     -- في كائن ثاني قربه. نلاحقه بالبحث حوله ونضغطه، بدل الاعتماد على كاش البرومبتات حولنا.
-    local pk = PICK.near(CFG.DROP_PR_RADIUS, part.Position)
-    pkCount = #pk
     for _, entry in ipairs(pk) do
       local pp = entry.prompt
-      if pp and pp.Parent then activatePrompt(pp, tries > 2, 1.0) end
+      if pp and pp.Parent and not candSeen[pp] then candSeen[pp] = true cands[#cands+1] = pp end
     end
     -- v7.1g: ما نضغط «أي برومبت قريب» — هذا كان سبب التعليق على برومبت عشوائي
     -- («اجلس»/«ارتداء»/باب/مركبة). نضغط فقط برومبتات الدروب نفسها أو برومبت التقاط صريح.
-    local live = getNearbyPrompts(15)
-    liveCount = 0
     for _, entry in ipairs(live) do
       local pp = entry.prompt
       if pp and pp.Parent and not isBlockedPrompt(pp) and PICK.isPickup(PICK.text(pp)) then
         liveCount = liveCount + 1
-        activatePrompt(pp, tries > 3, 1.0)
+        if not candSeen[pp] then candSeen[pp] = true cands[#cands+1] = pp end
       end
     end
+    -- v7.1j/k: Tier النسخة القديمة — أي برومبت «فيزيائيًا فوق الصندوق» في 10 أمتار من
+    -- الدروب. يبدأ من المحاولة 3 (مو 5) عشان يخلّص داخل 3 ثواني. المستبعد: برومبت
+    -- شخصية/أداة وأي كلمة ممنوعة — فما يعلّق على «اجلس/ارتداء/باب». وممنوع داخل الكهف.
+    if tries >= 3 and not inCaveNoHop(rr.Position) then
+      for _, entry in ipairs(activePrompts(10, true)) do
+        local pp = entry.prompt
+        if pp.Parent and not PICK.onChar(pp) and not PICK.blocked(PICK.text(pp)) then
+          bruteCount = bruteCount + 1
+          if not candSeen[pp] then candSeen[pp] = true cands[#cands+1] = pp end
+        end
+      end
+    end
+    for i, pp in ipairs(cands) do
+      activatePrompt(pp, false)
+      if isDropPassShown() then opened = true; why = "quick"; break end
+      if tries >= 3 and i == 1 then
+        activatePrompt(pp, true, 0.6)
+        if isDropPassShown() then opened = true; why = "hold"; break end
+      end
+    end
+    if opened then break end
     if isDropPassShown() then opened = true; why = "quiz"; break end
     touchObj(part)
     if isDropPassShown() then opened = true; why = "touch"; break end
@@ -1900,7 +2006,8 @@ local function handleDrop(target, kind)
   local setCount = 0
   for _ in pairs(promptSet) do setCount = setCount + 1 end
   logMs("DROP_OPEN", openT0, (opened and "zOK " or "zFAIL ")
-    .. ("zWhy=%s zTries=%d zLive=%d zPk=%d zPr=%d zSet=%d"):format(why, tries, liveCount, pkCount, #prompts, setCount))
+    .. ("zWhy=%s zTries=%d zLive=%d zPk=%d zPr=%d zSet=%d zBrute=%d"):format(
+      why, tries, liveCount, pkCount, #prompts, setCount, bruteCount))
   -- الدروب الشبح: نسجّله دقيقتين حتى ما يرجع يقطع المشي كل 8 ثوانٍ
   if not opened and #prompts == 0 and pkCount == 0 and liveCount == 0 then
     ST.dropBlack[target] = tick() + 120
@@ -1915,11 +2022,11 @@ local function handleDrop(target, kind)
     if isDropPassShown() then
       local ok, did = pcall(solveQuizPass, isSecret)
       if ok and did then solved = true; break end
-      task.wait(0.3)
+      task.wait(0.12)
     else
       -- نطلع بدري فقط إذا الدروب اختفى فعلًا ومع ذلك ما ظهرت المعادلة 3 ثواني
       if not target.Parent and not part.Parent and (tick() - t0 > 3) then break end
-      task.wait(0.2)
+      task.wait(0.12)
     end
   end
   if not solved and ST.autoDrop and isDropPassShown() then
@@ -3845,7 +3952,7 @@ local function buildGui()
   mkFlyBtn("↑", 80, -200, "W"); mkFlyBtn("↓", 80, -120, "S"); mkFlyBtn("←", 20, -160, "A"); mkFlyBtn("→", 140, -160, "D"); mkFlyBtn("⬆", 300, -200, "Up"); mkFlyBtn("", 300, -120, "Down")
   local floatBtn = Instance.new("TextButton", mobGui); floatBtn.Size = UDim2.new(0, 54, 0, 54); floatBtn.Position = UDim2.new(0, 14, 0.45, 0)
   floatBtn.BackgroundColor3 = Color3.fromRGB(14, 24, 38); floatBtn.BackgroundTransparency = 0.15
-  floatBtn.Text = "v7.1i"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
+  floatBtn.Text = "v7.1k"; floatBtn.TextSize = 12; floatBtn.TextColor3 = Color3.fromRGB(120, 235, 215)
   floatBtn.Font = Enum.Font.GothamBold; floatBtn.Active = true; floatBtn.Draggable = true
   Instance.new("UICorner", floatBtn).CornerRadius = UDim.new(1, 0)
   local fStroke = Instance.new("UIStroke", floatBtn); fStroke.Thickness = 1.5; fStroke.Transparency = 0.15
@@ -3871,10 +3978,10 @@ local function buildGui()
   Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
   grad(header, Color3.fromRGB(22, 31, 50), Color3.fromRGB(13, 18, 30), 0)
   local title = Instance.new("TextLabel", header); title.Size = UDim2.new(1, -230, 0, 22); title.Position = UDim2.new(0, 16, 0, 7)
-  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1i"; title.TextColor3 = P.text
+  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1k"; title.TextColor3 = P.text
   title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
   local subtitle = Instance.new("TextLabel", header); subtitle.Size = UDim2.new(1, -230, 0, 14); subtitle.Position = UDim2.new(0, 16, 0, 26)
-  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Drop Prompt Lock • Cave Floor Lock • Random 10-15m Unstuck • Forced TP • E every 3s"; subtitle.TextColor3 = P.muted
+  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Drop Prompt Lock • Open in <3s • Direct Quiz Scan • Random Unstuck • E every 3s"; subtitle.TextColor3 = P.muted
   subtitle.Font = Enum.Font.Gotham; subtitle.TextSize = 9; subtitle.TextXAlignment = Enum.TextXAlignment.Left
   local helpBtn = Instance.new("TextButton", header); helpBtn.Size = UDim2.new(0, 28, 0, 28); helpBtn.Position = UDim2.new(1, -206, 0, 9)
   helpBtn.BackgroundColor3 = P.row; helpBtn.BackgroundTransparency = 0.15; helpBtn.Text = "؟"
@@ -4494,7 +4601,7 @@ task.spawn(function() while not _G.StopAutoFarm do
   updateStats()
 end end)
 
-addLog("AUTOFARM v7.1i جاهز 👑")
+addLog("AUTOFARM v7.1k جاهز 👑")
 addLog("✅ كول داون: 150 ثانية (دقيقتين ونص) بعد كل مهمة — بلا بدء مبكر وبلا لخبطة مشي")
 addLog("✅ النقلة الذكية: 10 أمتار للأمام على المسار عند أول تعليق (كانت انتقال كامل للوجهة)")
 addLog("✅ الكهف: مشي فقط + الـ50 تُحسب مرة وحدة لكل فتحة باب (ما يعلق قدام الباب المفتوح)")
@@ -4508,4 +4615,4 @@ addLog("📋 تشخيص: zMISSION zCD zHOP zESC zFORCE zRND zDROP zQUIZ zCAVE zT
 addLog("جرّب: زر «📦 تجربة الدروب الآن» يطلّع zDROP فورًا")
 addLog("Home = إخفاء/إظهار | End = إيقاف")
 updateStats()
-print("[v7.1i] Ready — pickup prompts are re-classified every 1.5s near the player (fixes zPk=0 while 'التقاط العناصر' is on screen), drops are grabbed while carrying/delivering a mission crate (near drop only, delivery still finishes with the same crate), hold-style prompts open via InputHold, same-equation quiz retry 2.5s→1.2s, cave walks to the FLOOR (Y checked) and bails after 22s of no progress, random 6-15m unstuck hop (zRND), forced teleport to destination (zFORCE), E every 3s, 150s mission cooldown, mobile-friendly caches")
+print("[v7.1k] Ready — drop opening is now FAST (every candidate pressed instantly with no 1s hold each, first press under 1s after E appears, 4s open window + 5s retry instead of sitting 8-15s, quiz re-checked every 0.12s and same-equation retry 0.6s, old-build any-prompt-within-10-studs tier from try 3 but still never on characters/tools/blocked words and never inside the cave), v7.1j kept: direct DropPass scan for label+TextBox+Apply, firesignal(FocusLost) write fallback, '3 x 9' parses as multiply, pickup prompts are re-classified every 1.5s near the player (fixes zPk=0 while 'التقاط العناصر' is on screen), drops are grabbed while carrying/delivering a mission crate (near drop only, delivery still finishes with the same crate), hold-style prompts open via InputHold, same-equation quiz retry 2.5s→0.6s, cave walks to the FLOOR (Y checked) and bails after 22s of no progress, random 6-15m unstuck hop (zRND), forced teleport to destination (zFORCE), E every 3s, 150s mission cooldown, mobile-friendly caches")
