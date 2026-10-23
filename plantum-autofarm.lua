@@ -54,16 +54,20 @@ local CFG = {
   WH_RIGHT       = Vector3.new(330.97, 10.19, -178.10),
   WH_FRONT       = Vector3.new(336.0, 10.0, -177.0),
   SAFE_POS       = Vector3.new(261.79, 8.5, -297.35),
-  -- v7.1b: من خريطة الماب الحقيقية — Door@(396,12,-602) و Win@(418,9,-602) زجاج،
-  -- وداخل الكهف برومبت Security2@(432,10,-602) وخارجها Security1@(387,8,-589)
-  CYBER_CAVE_POS = Vector3.new(432, 10, -602),
+  -- v7.1c: بالمراقبة الحقيقية — النقاط الـ50 تُلتقط عند (416.4, 9.0, -601.1) بالمشي،
+  -- بدون برومبت ولا انتقال ولا ريستارت. الباب ينفتح بإشارة NotiEvent مو تشات.
+  CYBER_CAVE_POS = Vector3.new(417, 9, -601),
   CYBER_DOOR_POS = Vector3.new(396, 12, -602),
   CYBER_LEVER    = Vector3.new(235.92, 6.87, -101.00),
   CYBER_DOOR_OUT = Vector3.new(387, 8, -589),
   CYBER_MIN_HP   = 35,
-  CYBER_USE_LEVER= true,
-  CYBER_STAY     = 15,
+  CYBER_USE_LEVER= false,
+  -- v7.1c: المراقبة: الباب يبقى مفتوحاً 29+ ثانية — وقت يكفي للمشي من أي مكان بالماب
+  CYBER_STAY     = 55,
   CYBER_COOLDOWN = 25,
+  -- v7.1c: NotiEventنادي قبل الفتح بثلاثين ثانية — ننتظر الباب يفعلاً ثم نمشي
+  CYBER_DOOR_WAIT = 55,
+  CYBER_POINTS    = 50,
   COOLDOWN       = 150,
   SHOWTARGET_WAIT= 2.5,
   DROP_NAMES     = {"Airdrop","SecretAirdrop","Drops","Airdrops","ActiveDrops","SecretDrops","SpecialDrop","RareDrop"},
@@ -81,6 +85,12 @@ local CFG = {
   DROP_TP_ABOVE   = 5,
   DROP_OPEN_MS    = 7,
   DROP_RETRY_CD   = 8,
+  -- v7.1f: كول داون المهمة 3 دقائق بالضبط بعد كل مهمة تكتمل (قيمة ثابتة — السيرفر
+  -- يرسل طابع وقت مو عدّاد، فما فيه مصدر أدق من زمن محلي ثابت)
+  MISSION_COOLDOWN = 180,
+  BOARD_WALK_MIN   = 12,   -- ما نرجع للوحة وقت الكول داون إلا إذا كنا أبعد من هالكيلو متر
+  HOP_DIST         = 10,   -- طول النقلة الذكية عند أقل تعليق
+  HOP_STALL        = 0.55, -- زمن التعليق اللي يستفز النقلة (كان 1.5 ثانية)
 }
 
 local ST = {
@@ -90,6 +100,10 @@ local ST = {
   busyDrop=false, busyCyber=false, handlingDrop=false, cyberPending=false,
   dropRequested=false, dropQueued=nil, dropQueueKind=nil, lastDropAt=0,
   busyWeather=false, weatherStarting=false,
+  -- v7.1c: إشارة NotiEvent للدروب + مهمة الأجواء (WorldWeatherMissionHUD)
+  autoWeather=false, notiDropAt=0, notiDropSeenAt=0,
+  weatherActive=false, weatherStartedAt=0, weatherLastTry=0, weatherLastLog=0,
+  remoteEq=nil, remoteEqAt=0,
   cyberRetryUntil=0, cyberSignalAt=0, cyberBusySpawned=false,
   lastCyberLog=0, lastCyberSkipLog=0,
   walking=false, walkDest=nil, goalPos=nil, stuckStrikes=0,
@@ -140,21 +154,32 @@ end
 
 local logBuf={}
 local logLbl, scroll, statusLbl, statsLbl
+-- v7.1f: تحديث الواجهة صار مجمّع (كل 0.35 ثانية بدل كل سطر). إعادة نص الـ TextLabel
+-- الملتف + AbsoluteSize كانت أغلى عملية على أندرويد وقت زحمة اللوق.
+local logDirty = false
+local function flushLog()
+  if not logDirty then return end
+  logDirty = false
+  if not logLbl then return end
+  logLbl.Text = table.concat(logBuf, "\n")
+  if scroll then
+    scroll.CanvasSize = UDim2.new(0, 0, 0, logLbl.AbsoluteSize.Y + 10)
+    scroll.CanvasPosition = Vector2.new(0, math.max(0, logLbl.AbsoluteSize.Y))
+  end
+end
 local function addLog(s)
   if _G.StopAutoFarm then return end
   logBuf[#logBuf+1]=("[%s] %s"):format(os.date("%H:%M:%S"),s)
   if #logBuf>60 then table.remove(logBuf,1) end
-  if logLbl then
-    logLbl.Text=table.concat(logBuf,"\n")
-    task.defer(function()
-      if scroll then
-        scroll.CanvasSize=UDim2.new(0,0,0,logLbl.AbsoluteSize.Y+10)
-        scroll.CanvasPosition=Vector2.new(0,math.max(0,logLbl.AbsoluteSize.Y))
-      end
-    end)
-  end
+  logDirty = true
   print("[v7.1]",s)
 end
+task.spawn(function()
+  while not _G.StopAutoFarm do
+    task.wait(0.35)
+    pcall(flushLog)
+  end
+end)
 
 local function setStatus(s,color) if statusLbl then statusLbl.Text=s; if color then statusLbl.TextColor3=color end end end
 local function updateStats()
@@ -215,6 +240,8 @@ local REM = {
   EquipCuff   = RS:FindFirstChild("EquipCuff"),
   GunInput    = Rem and Rem:FindFirstChild("GunInput"),
   AutoJail    = RS:FindFirstChild("AutoJail"),
+  -- v7.1c: نظام إشعارات اللعبة — arg[3] فيه نص الرسالة (باب السيبراني / الدروب)
+  NotiEvent   = RS:FindFirstChild("NotiEvent"),
 }
 
 local function char() return pl.Character end
@@ -223,12 +250,52 @@ local function hrp() local c=char(); return c and c:FindFirstChild("HumanoidRoot
 local function alive() local h=hum(); return h and h.Health>0 end
 local function flatDist(a,b) return math.sqrt((a.X-b.X)^2+(a.Z-b.Z)^2) end
 
+-- v7.1f: نهاية المهمة الحتمية (السيرفر قال مافريق هدف / إشارة Complete).
+-- من هاللحظة كول داون 3 دقائق بالضبط، ومافيه أي ضغط بدء قبله.
+-- ضد الترديد: ShowTarget(nil) و MissionComplete يجون سوا بنفس اللحظة.
+local function markMissionEnd(reason)
+  local t = tick()
+  ST.missionWasOn = false
+  if (ST.lastMissionEndAt or 0) > 0 and t - ST.lastMissionEndAt < 10 then return end
+  ST.lastMissionEndAt = t
+  ST.cdExpire = t + CFG.MISSION_COOLDOWN
+  ST.cdLogged = false
+  addLog(("zMISSION end=%s zCD=%ds"):format(tostring(reason), CFG.MISSION_COOLDOWN))
+end
+-- أي كتابة كول داون قصيرة (2/5 ثوانٍ لأنهاء محاولة فاشلة) ما تقصّر كول داون 180 قائم
+local function setCdAt(t)
+  if t > ST.cdExpire then ST.cdExpire = t end
+end
+
+-- v7.1c: قراءة النقاط الحقيقية من leaderstats.Points (أكدتها المراقبة)
+local function getPointsValue()
+  local ls = pl:FindFirstChild("leaderstats")
+  if not ls then return nil end
+  local p = ls:FindFirstChild("Points")
+  return p and p.Value or nil
+end
+
 -- [إصلاح 1] HardUnstuck: تصفير فيزياء كامل (+ سناب للأرض بالري كاست إذا مرّر موقع)
+-- v7.1f: الري كاست يبدأ قريب من النقطة (8 فوق / 16 تحت) بدل 12 فوق و60 تحت.
+-- الطويل كان يلسق سقف الكهف أو المباني بدل الأرض = مشي غلط داخل السيبراني.
+-- و RespectCanCollide يمنع الوقوف على مجلدات الزones الشفافة (نقاط الكهف/الدروب).
+local function makeRayParams()
+  local rp = RaycastParams.new()
+  rp.FilterType = Enum.RaycastFilterType.Exclude
+  if char() then rp.FilterDescendantsInstances = {char()} end
+  pcall(function() rp.RespectCanCollide = true end)
+  return rp
+end
+local function rayFloor(pos, up, down)
+  local hit = workspace:Raycast(Vector3.new(pos.X, pos.Y + up, pos.Z), Vector3.new(0, -down, 0), makeRayParams())
+  if hit then return hit.Position end
+  return nil
+end
 local function groundOf(pos)
-  local rp=RaycastParams.new(); rp.FilterType=Enum.RaycastFilterType.Exclude
-  if char() then rp.FilterDescendantsInstances={char()} end
-  local hit=workspace:Raycast(Vector3.new(pos.X,pos.Y+12,pos.Z),Vector3.new(0,-60,0),rp)
-  return hit and Vector3.new(pos.X,hit.Position.Y+3,pos.Z) or pos
+  local y = rayFloor(pos, 8, 16)
+  if not y then y = rayFloor(pos, 14, 40) end
+  if not y then y = rayFloor(pos, 24, 90) end
+  return y and Vector3.new(pos.X, y.Y + 3, pos.Z) or pos
 end
 
 local function HardUnstuck(pos)
@@ -381,29 +448,32 @@ local function classifyDrop(obj)
 end
 
 local dropCache = {obj = nil, kind = nil, at = 0}
+local function dropHit(item)
+  dropCache.obj, dropCache.kind, dropCache.at = item, classifyDrop(item), tick()
+  return dropCache.obj, dropCache.kind
+end
+-- v7.1f: الكاش يصحح السلبي أيضاً. المشي ينادي findActiveDrop كل 0.04 ثانية داخل
+-- حلقة النقطة، وقبل كذا كان يكنس أسماء الدروب + كل أطفال workspace كل مرة = أكبر مصدر تعليق.
 local function findActiveDrop(force)
-  if dropCache.obj and dropCache.obj.Parent and not force and tick() - dropCache.at < 0.35 then
-    return dropCache.obj, dropCache.kind
-  end
-  local function hit(item)
-    dropCache.obj, dropCache.kind, dropCache.at = item, classifyDrop(item), tick()
-    return dropCache.obj, dropCache.kind
+  if not force and tick() - dropCache.at < 0.35 then
+    if dropCache.obj and dropCache.obj.Parent then return dropCache.obj, dropCache.kind end
+    if not dropCache.obj then return nil, nil end
   end
   for _, n in ipairs(CFG.DROP_NAMES) do
     local obj = workspace:FindFirstChild(n)
     if obj and obj.Parent then
       if obj:IsA("Folder") then
         for _, child in ipairs(obj:GetChildren()) do
-          if (child:IsA("Model") or child:IsA("BasePart")) and child.Parent and child.Name ~= "RainDrop" then return hit(child) end
+          if (child:IsA("Model") or child:IsA("BasePart")) and child.Parent and child.Name ~= "RainDrop" then return dropHit(child) end
         end
-      else return hit(obj) end
+      else return dropHit(obj) end
     end
   end
   for _, fName in ipairs(CFG.DROP_FOLDERS) do
     local f = workspace:FindFirstChild(fName)
     if f and (f:IsA("Folder") or f:IsA("Model")) then
       for _, item in ipairs(f:GetChildren()) do
-        if (item:IsA("Model") or item:IsA("BasePart")) and item.Parent and item.Name ~= "RainDrop" then return hit(item) end
+        if (item:IsA("Model") or item:IsA("BasePart")) and item.Parent and item.Name ~= "RainDrop" then return dropHit(item) end
       end
     end
   end
@@ -415,7 +485,7 @@ local function findActiveDrop(force)
     return false
   end
   for _, obj in ipairs(workspace:GetChildren()) do
-    if (obj:IsA("Model") or obj:IsA("BasePart")) and dynName(obj) then return hit(obj) end
+    if (obj:IsA("Model") or obj:IsA("BasePart")) and dynName(obj) then return dropHit(obj) end
   end
   dropCache.obj, dropCache.kind, dropCache.at = nil, nil, tick()
   return nil, nil
@@ -427,6 +497,8 @@ local function promptHost(obj)
   local parent = obj.Parent
   if not parent then return nil end
   if parent:IsA("BasePart") then return parent end
+  -- v7.1e: برومبت على Attachment داخل Part بدون Model كان يطلع بلا مكان ويُتجاهل
+  if parent:IsA("Attachment") and parent.Parent and parent.Parent:IsA("BasePart") then return parent.Parent end
   if parent:IsA("Model") then return parent.PrimaryPart or parent:FindFirstChildWhichIsA("BasePart", true) end
   local top = parent:FindFirstAncestorOfClass("Model")
   if top then return top.PrimaryPart or top:FindFirstChildWhichIsA("BasePart", true) end
@@ -581,10 +653,29 @@ local function logMs(tag, t0, extra)
 end
 
 local AR_MAP = {["٠"]="0",["١"]="1",["٢"]="2",["٣"]="3",["٤"]="4",["٥"]="5",["٦"]="6",["٧"]="7",["٨"]="8",["٩"]="9"}
+-- v7.1c: كان في نمطين فاضيين gsub("","+") و gsub("","-") — Lua يحقن العلامة بين كل
+-- حرفين، فكانت «10 ＋ 5» تتحول «+1+0+-+-+5+» ويطلع الجواب غلط. هذا سبب «ما يحل الكويز».
+local OP_MAP = {
+  ["×"]="*", ["✕"]="*", ["✖"]="*", ["＊"]="*",
+  ["÷"]="/", ["∕"]="/", ["／"]="/",
+  ["＋"]="+", ["﹢"]="+", ["➕"]="+",
+  ["－"]="-", ["−"]="-", ["–"]="-", ["—"]="-", ["―"]="-", ["﹣"]="-", ["➖"]="-",
+  ["＝"]="=",
+  ["؟"]="?", ["ـ"]="",
+}
+local cleanMemo, cleanMemoN = {}, 0
 local function cleanText(t)
-  local s = tostring(t or "")
+  local raw = t or ""
+  if type(raw) ~= "string" then raw = tostring(raw) end
+  local cached = cleanMemo[raw]
+  if cached ~= nil then return cached end
+  local s = raw
   for ar,en in pairs(AR_MAP) do s = s:gsub(ar,en) end
-  return s:gsub("×","*"):gsub("✕","*"):gsub("÷","/"):gsub("＋","+"):gsub("﹢","+"):gsub("","+"):gsub("－","-"):gsub("−","-"):gsub("–","-"):gsub("—","-"):gsub("―","-"):gsub("","-"):gsub("＝","="):gsub("؟","?"):gsub("ـ","")
+  for k,v in pairs(OP_MAP) do s = s:gsub(k,v) end
+  cleanMemoN = cleanMemoN + 1
+  if cleanMemoN > 400 then cleanMemo = {}; cleanMemoN = 0 end
+  cleanMemo[raw] = s
+  return s
 end
 local function solveStr(s)
   if type(s) ~= "string" then return nil end
@@ -613,66 +704,168 @@ local function parseEq(t)
   return nil
 end
 
+-- v7.1e: «ظاهر» = العنصر وكل الإطارات فوقه ظاهرة. Visible لحاله يكذب لما الإطار الأب مخفي
+local function guiShown(d, root)
+  local p = d
+  while p and p ~= root do
+    if p:IsA("GuiObject") and not p.Visible then return false end
+    p = p.Parent
+  end
+  return true
+end
+-- v7.1e: واجهة السكربت وأدوات الفحص مو كويز (مربع السرعة حقنا كان ينقرى ككويز ويوقف ضغط E)
+local function isOwnGui(g)
+  local n = g.Name
+  return n:find("FinalFix", 1, true) or n:find("AutoFarm", 1, true) or n == "MobileFlyGui"
+    or n == "WeatherAutoGui" or n == "SolaraMON" or n == "SolaraPROBE"
+end
+
+-- v7.1f:كويز الدروب/الصندوق فيه مربع كتابة دائمًا — نتتبع المربعات بالأحداث بدل
+-- كنس كل واجهة (وكل CoreGui) كل 0.15 ثانية، وهو اللي كان يجمّد أندرويد.
+local trackedBoxes = {}
+local tbxTracked = false
+addC(pg.DescendantAdded:Connect(function(d)
+  if tbxTracked and d:IsA("GuiTextBox") then
+    local g = d:FindFirstAncestorOfClass("ScreenGui")
+    if g and not isOwnGui(g) then
+      local list = trackedBoxes[g]
+      if not list then list = {}; trackedBoxes[g] = list end
+      list[d] = true
+    end
+  end
+end))
+addC(pg.DescendantRemoving:Connect(function(d)
+  if tbxTracked and d:IsA("GuiTextBox") then
+    local g = d:FindFirstAncestorOfClass("ScreenGui")
+    local list = g and trackedBoxes[g]
+    if list then
+      list[d] = nil
+      if next(list) == nil then trackedBoxes[g] = nil end
+    end
+  end
+end))
+task.spawn(function()
+  task.wait(0.4)
+  for _, g in ipairs(pg:GetChildren()) do
+    if g:IsA("ScreenGui") and not isOwnGui(g) then
+      for _, d in ipairs(g:GetDescendants()) do
+        if d:IsA("GuiTextBox") then
+          local list = trackedBoxes[g]
+          if not list then list = {}; trackedBoxes[g] = list end
+          list[d] = true
+        end
+      end
+    end
+  end
+  tbxTracked = true
+end)
+
 local quizScan = {at = -1, gui = nil, lbl = nil, box = nil, btns = nil, joined = ""}
 local function scanQuiz(force)
   -- v7.1: كاش للنتيجة الفارغة أيضاً — لوب الضغط يناديها كل 0.08s و GetDescendants ثقيل
-  if not force and quizScan.at >= 0 and (tick() - quizScan.at < (quizScan.gui and 0.2 or 0.15)) then return quizScan end
+  if not force and quizScan.at >= 0 and (tick() - quizScan.at < (quizScan.gui and 0.25 or 0.2)) then return quizScan end
   quizScan.at = tick()
   quizScan.gui, quizScan.lbl, quizScan.box, quizScan.btns, quizScan.joined = nil, nil, nil, {}, ""
   local best = 0
-  local function consider(g)
+  -- v7.1e: لايبل فيه «=» أو «؟» = معادلة الكويز؛ بدونها ممكن يكون عدّاد مثل «1 / 5» حق شارة المهمة
+  local function hasEqMark(t)
+    local s = cleanText(t)
+    return s:find("=", 1, true) ~= nil or s:find("?", 1, true) ~= nil
+  end
+  local function consider(g, strict)
     if not g then return end
-    local ok = pcall(function() return g.Enabled end)
-    if ok == false then return end
     if g.Enabled == false then return end
-    local rootVis = true
+    if isOwnGui(g) then return end
+    -- v7.1f: بدون مربع كتابة ظاهر ما فيه كويز — هالباب وحده يشيل كنس الشات والهدود
+    local list = trackedBoxes[g]
+    if not list or next(list) == nil then return end
+    if not guiShown(g, g) then return end
+    local rootVis = false
     for _, c in ipairs(g:GetChildren()) do
-      if c:IsA("Frame") or c:IsA("CanvasGroup") then rootVis = c.Visible ~= false; break end
+      if c:IsA("GuiObject") then rootVis = c.Visible ~= false; break end
     end
     if not rootVis then return end
     local lbl, box, btns, n, eq = nil, nil, {}, 0, {}
     local okd, desc = pcall(function() return g:GetDescendants() end)
     if not okd or not desc then return end
     for _, d in ipairs(desc) do
-      local vis = false
-      pcall(function() vis = d.Visible and d.AbsoluteSize.X > 4 and d.AbsoluteSize.Y > 4 end)
-      if vis then
-        if d:IsA("TextBox") then
-          if not box then box = d end
-        elseif d:IsA("TextButton") then
-          n = n + 1; btns[#btns+1] = d
-          if not lbl then local e = parseEq(d.Text); if e then lbl = d end end
-          if d.Text and d.Text:match("%d") then eq[#eq+1] = d.Text end
-        elseif d:IsA("TextLabel") then
-          if not lbl and parseEq(d.Text) then lbl = d end
-          if d.Text and d.Text:match("%d") then eq[#eq+1] = d.Text end
+      -- v7.1f: فحص ClassList قبل أي خاصية = بلا pcall لكل نسل (كان مكلف جدًا على الموبايل)
+      if d:IsA("GuiObject") and d.Visible and d.AbsoluteSize.X > 4 and d.AbsoluteSize.Y > 4 then
+        local vis = guiShown(d.Parent, g)
+        if vis then
+          if d:IsA("GuiTextBox") then
+            if not box then box = d end
+          elseif d:IsA("TextButton") then
+            n = n + 1; btns[#btns+1] = d
+            if not lbl then local e = parseEq(d.Text); if e then lbl = d end end
+            if d.Text and d.Text:match("%d") then eq[#eq+1] = d.Text end
+          elseif d:IsA("TextLabel") then
+            if parseEq(d.Text) and (not lbl or (hasEqMark(d.Text) and not hasEqMark(lbl.Text))) then lbl = d end
+            if d.Text and d.Text:match("%d") then eq[#eq+1] = d.Text end
+          end
         end
       end
     end
+    -- v7.1e: نافذة الكويز فيها مربع كتابة دائمًا. شارة المهمة («1 / 5» + تخطي) ما فيها — مو كويز
+    if not box then return end
+    if strict and not (lbl and hasEqMark(lbl.Text)) then return end
     local score = (lbl and 4 or 0) + (box and 2 or 0) + (n > 0 and 1 or 0)
     if score > best then
       best = score; quizScan.gui, quizScan.lbl, quizScan.box, quizScan.btns = g, lbl, box, btns
       quizScan.joined = table.concat(eq, " ")
     end
   end
-  for _, g in ipairs(pg:GetChildren()) do if g:IsA("ScreenGui") then consider(g) end end
-  if best < 4 then
+  for g, list in pairs(trackedBoxes) do
+    if next(list) then consider(g, false) end
+  end
+  -- v7.1f: احتياطي CoreGui (كويز داخل HUI) صار محدودًا: مرة كل 2.5 ثانية وبشرط صارم،
+  -- وبس لما مالبينا شيء — قبل كان يكنس كل واجهات النظام كل نداء تقريبًا.
+  if best < 4 and (tick() - (quizScan.huiAt or -99) > 2.5) then
+    quizScan.huiAt = tick()
     local cg
     pcall(function() cg = gethui and gethui() or game:GetService("CoreGui") end)
-    if cg then pcall(function() for _, g in ipairs(cg:GetChildren()) do if g:IsA("ScreenGui") then consider(g) end end end) end
+    if cg then
+      pcall(function()
+        for _, g in ipairs(cg:GetChildren()) do
+          if g:IsA("ScreenGui") and trackedBoxes[g] == nil then
+            for _, d in ipairs(g:GetDescendants()) do
+              if d:IsA("GuiTextBox") then
+                local list = trackedBoxes[g]
+                if not list then list = {}; trackedBoxes[g] = list end
+                list[d] = true
+              end
+            end
+          end
+        end
+      end)
+      pcall(function() for _, g in ipairs(cg:GetChildren()) do if g:IsA("ScreenGui") then consider(g, true) end end end)
+    end
   end
   return quizScan
 end
 
 local APPLY_WORDS = {"تأكيد","تاكد","أكد","اكد","apply","submit","confirm","ok","نعم","عمل","إرسال","ارسال","حل"}
+-- v7.1e: أزرار ممنوع نضغطها كـ«تأكيد» أبدًا — الاحتياطي (أكبر زر) كان ممكن يضغط «تخطي» ويلغي المهمة
+local NO_CLICK_WORDS = {"تخطي","skip","إلغاء","الغاء","cancel","close","إغلاق","اغلاق","خروج","exit"}
+local function isNoClickText(t)
+  for _, w in ipairs(NO_CLICK_WORDS) do if t:find(w, 1, true) then return true end end
+  return false
+end
 local function pickApplyBtn(btns)
   if not btns then return nil end
+  local safe = {}
   for _, b in ipairs(btns) do
+    local t = ((b.Name or "") .. " " .. (b.Text or "")):lower()
+    local bad = (b.Text == "X" or b.Text == "x" or b.Text == "✕")
+    for _, w in ipairs(NO_CLICK_WORDS) do if t:find(w, 1, true) then bad = true; break end end
+    if not bad then safe[#safe+1] = b end
+  end
+  for _, b in ipairs(safe) do
     local t = ((b.Name or "") .. " " .. (b.Text or "")):lower()
     for _, w in ipairs(APPLY_WORDS) do if t:find(w, 1, true) then return b end end
   end
   local big
-  for _, b in ipairs(btns) do
+  for _, b in ipairs(safe) do
     if not big or b.AbsoluteSize.X * b.AbsoluteSize.Y > big.AbsoluteSize.X * big.AbsoluteSize.Y then big = b end
   end
   return big
@@ -684,7 +877,7 @@ local function getDropPassElements()
   if not quez then
     local dp = pg:FindFirstChild(CFG.QUIZ_GUI)
     if dp then for _, d in ipairs(dp:GetDescendants()) do
-      if d:IsA("TextLabel") and d.Visible and (d.Name == CFG.QUIZ_LABEL or d.Name:lower():find("quez", 1, true)) then quez = d; break end
+      if d:IsA("TextLabel") and d.Visible and guiShown(d.Parent, dp) and (d.Name == CFG.QUIZ_LABEL or d.Name:lower():find("quez", 1, true)) then quez = d; break end
     end end
   end
   return quez, s.box, pickApplyBtn(s.btns)
@@ -692,11 +885,13 @@ end
 
 local function isDropPassShown()
   local s = scanQuiz()
-  if s.gui and (s.lbl or s.box or parseEq(s.joined or "")) then return true end
+  -- v7.1e: لازم مربع كتابة + (معادلة أو السيرفر قال open). قبل: أي TextBox ظاهر يكفي = إنذار كاذب دائم
+  local srvOpen = ST.remoteEq ~= nil and (tick() - (ST.remoteEqAt or 0)) < 27
+  if s.gui and s.box and (s.lbl or srvOpen or parseEq(s.joined or "")) then return true end
   local dp = pg:FindFirstChild(CFG.QUIZ_GUI)
-  if dp and dp.Enabled then
+  if dp and dp.Enabled ~= false and guiShown(dp, dp) then
     for _, d in ipairs(dp:GetDescendants()) do
-      if d:IsA("TextLabel") and d.Name == CFG.QUIZ_LABEL and d.Visible and d.AbsoluteSize.X > 5 then return true end
+      if d:IsA("TextLabel") and d.Name == CFG.QUIZ_LABEL and d.Visible and d.AbsoluteSize.X > 5 and guiShown(d.Parent, dp) then return true end
     end
   end
   return false
@@ -774,50 +969,87 @@ local function findNearbySpot(fromPos, dest)
   return nil
 end
 
-local function emergencyNudge(dest)
+-- v7.1f: منطقة محرّمة على النقلة حول الكهف — المستخدم شرطها «مشي فقط»، والنقلة
+-- تقدر تعدي الباب المقفل أو تلسق اللاعب فوق سقف الكهف.
+local function inCaveNoHop(pos)
+  return flatDist(pos, CFG.CYBER_CAVE_POS) < 30
+    or flatDist(pos, CFG.CYBER_DOOR_POS) < 26
+    or flatDist(pos, CFG.CYBER_DOOR_OUT) < 22
+end
+
+-- v7.1f: النقلة الذكية — بدل «انتقل لآخر الوجهة» اللي كان يقذف اللاعب لمكان غلط:
+-- 10 أمتار للأمام على المسار نفسه (نفس polyline المشي)، وإذا الباقي للوجهة أقل من
+-- 10 يخلصها بوقفة وحدة. يتحقق بالأرض الصلبة وبالفراغ فوقه، وما يدخل منطقة الكهف.
+local function smartHop(dest, wpts, idx)
   if not ST.emergencyTpOn then return false end
-  if tick() - (ST.lastEmergencyTp or 0) < 1.0 then return false end
+  if tick() - (ST.lastEmergencyTp or 0) < 0.6 then return false end
   local r, h = hrp(), hum()
   if not r or not h or h.Health <= 0 then return false end
-  if tick() - (ST.lastEmergencyTp or 0) > 6 then ST.stuckStrikes = 0 end
   local goal = dest or ST.goalPos
-  if goal and flatDist(r.Position, goal) < 2 then return false end
-  local spot = nil
-  if (ST.stuckStrikes or 0) < 2 then spot = findNearbySpot(r.Position, goal) end
-  if not spot and goal then
-    local g = groundOf(goal)
-    if isSpotFree(g + Vector3.new(0, 1.6, 0)) then spot = g end
-  end
-  if not spot and goal then spot = groundOf(goal) end
-  if not spot then
-    if tick() - (ST.lastEmergencyLog or 0) > 8 then
-      ST.lastEmergencyLog = tick()
-      addLog("⚠️ الانتقال التلقائي: ما فيه هدف محدد ولا مكان قريب")
+  if not goal then return false end
+  local D = flatDist(r.Position, goal)
+  if D < 1.2 then return false end
+  local maxHop = math.min(CFG.HOP_DIST, D - 0.8)
+  if maxHop < 1.5 then maxHop = math.min(2.5, D) end
+  local function tryPoint(p, forward)
+    if forward > D + 0.5 then return nil, 0 end
+    if inCaveNoHop(p) or inCaveNoHop(r.Position) then return nil, forward end
+    local gy = rayFloor(p, 5, 12)
+    if gy and (gy.Y - r.Position.Y) < 4 then
+      local landing = Vector3.new(p.X, gy.Y + 2.2, p.Z)
+      if isSpotFree(landing) or isSpotFree(landing + Vector3.new(0, 0.8, 0)) then return landing, forward end
     end
-    return false
+    return nil, forward
   end
+  local spot, reachedF = nil, 0
+  if wpts and #wpts > 1 then
+    local walked = 0
+    for k = math.max(2, idx or 2), #wpts do
+      local a = wpts[k - 1].Position
+      local b = wpts[k].Position
+      local seg = flatDist(a, b)
+      if seg <= 0.05 then seg = 0.05 end
+      local remain = maxHop - walked
+      if remain <= 0 then break end
+      local f = math.min(1, remain / seg)
+      local candidate = a + (b - a) * f
+      local s2, f2 = tryPoint(candidate, walked + seg * f)
+      reachedF = f2
+      if s2 then spot = s2; break end
+      walked = walked + seg * f
+      if walked >= maxHop then break end
+    end
+  end
+  if not spot then
+    local bd = Vector3.new(goal.X - r.Position.X, 0, goal.Z - r.Position.Z)
+    if bd.Magnitude > 0.1 then
+      local fwd = math.min(maxHop, D)
+      local s2, f2 = tryPoint(r.Position + bd.Unit * fwd, fwd)
+      reachedF = f2
+      if s2 then spot = s2 end
+    end
+  end
+  if not spot then return false end
   local before = r.Position
   ST.lastEmergencyTp = tick()
-  ST.stuckStrikes = (ST.stuckStrikes or 0) + 1
+  local face = CFrame.new(r.Position, Vector3.new(goal.X, r.Position.Y, goal.Z)) - r.Position
   local ok = pcall(function()
-    r.CFrame = CFrame.new(spot) * (r.CFrame - r.CFrame.Position)
     r.AssemblyLinearVelocity = Vector3.zero
+    r.AssemblyAngularVelocity = Vector3.zero
+    r.CFrame = CFrame.new(spot) * face
+    r.AssemblyLinearVelocity = Vector3.zero
+    r.AssemblyAngularVelocity = Vector3.zero
     h.Jump = true
   end)
-  task.wait(0.25)
+  task.wait(0.12)
   local r2 = hrp()
   local moved = (r2 and flatDist(before, r2.Position)) or 0
   if ok and moved >= 1 then
-    HardUnstuck()
-    if tick() - (ST.lastEmergencyLog or 0) > 2 then
+    if tick() - (ST.lastEmergencyLog or 0) > 1.5 then
       ST.lastEmergencyLog = tick()
-      addLog(("🚑 انتقال تلقائي — تعليق 1.5 ثانية (%.0f متر)"):format(moved))
+      addLog(("🚑 نقلة ذكية +%.0f متر — zHOP fwd=%.0f remain=%.0f"):format(moved, reachedF, math.max(0, D - reachedF)))
     end
     return true
-  end
-  if tick() - (ST.lastEmergencyLog or 0) > 4 then
-    ST.lastEmergencyLog = tick()
-    addLog("⚠️ الانتقال التلقائي ما نجح — نجرّب اتجاه ثاني")
   end
   return false
 end
@@ -826,6 +1058,8 @@ local function walkCore(dest, maxT, isDrop, owner)
   maxT = maxT or 20; local r, h = hrp(), hum()
   if not r or not h or not alive() then return false end
   local tgt = groundOf(dest); local stopD = 2.0
+  -- v7.1f: وصلنا قبل كل شي = بلا ComputeAsync ولا مشي (القديم كان يبني المسار دائمًا)
+  if flatDist(r.Position, tgt) <= stopD then return true end
   h.WalkSpeed = ST.customSpeedOn and ST.walkSpeed or 16
   local path = PS:CreatePath({AgentRadius=1.5, AgentHeight=5, AgentCanJump=true, WaypointSpacing=3.5})
   local wpts = nil
@@ -842,18 +1076,20 @@ local function walkCore(dest, maxT, isDrop, owner)
     if owner == "mission" and not ST.autoMission then return "OFF" end
     if owner == "drop" and not ST.autoDrop then return "OFF" end
     if owner == "cyber" and not ST.autoCyber then return "OFF" end
-    if ST.busyCyber then return "CYBER" end
-    -- v7.1: نقاطع المشي لدروب موجود فعلاً فقط — لا لمجرد flag عالق (سبب إعادة المهمة كل ثانية)
-    if not isDrop and ST.autoDrop and not ST.busyDrop and not hasCrate() and findActiveDrop() then return "DROP" end
+    -- v7.1c: مشي الكهف نفسه ما يقطع نفسه — busyCyber يقاطع غيرة بس
+    if ST.busyCyber and owner ~= "cyber" then return "CYBER" end
+    -- v7.1f: البحث عن دروب صار رخيص (كاش سبي + سلبية) — بس نقصره على خارج الكهف،
+    -- لأن مقاطعة مشي الكهف كل مرة فيه كانت تشيل اللاعب من نقطة الـ50
+    if not isDrop and owner ~= "cyber" and ST.autoDrop and not ST.busyDrop and not hasCrate() and findActiveDrop() then return "DROP" end
     return nil
   end
   local function reached() return flatDist(r.Position, tgt) <= stopD end
-  local nudges = 0
+  local hops = 0
   local idx = 2
-  local function tryNudge()
-    if nudges >= 6 then return "GIVEUP" end
-    local aim = (wpts and wpts[idx] and wpts[idx].Position) or tgt
-    if emergencyNudge(aim) then nudges = nudges + 1; return true end
+  -- v7.1f: النقلة الذكية بدل «انتقال لآخر الوجهة» — 10 أمتار على المسار بس
+  local function tryHop()
+    if hops >= 10 then return "GIVEUP" end
+    if smartHop(tgt, wpts, idx) then hops = hops + 1; return true end
     return false
   end
   local t0 = tick()
@@ -861,6 +1097,7 @@ local function walkCore(dest, maxT, isDrop, owner)
   local stuckT = 0
   local repaths = 0
   local lastDetour = 0
+  local lastRepath = 0
   local function freeDirSpot(rad)
     local bd = Vector3.new(tgt.X - r.Position.X, 0, tgt.Z - r.Position.Z)
     if bd.Magnitude < 0.1 then return nil end
@@ -869,6 +1106,7 @@ local function walkCore(dest, maxT, isDrop, owner)
     local rp = RaycastParams.new()
     rp.FilterType = Enum.RaycastFilterType.Exclude
     if pl.Character then rp.FilterDescendantsInstances = {pl.Character} end
+    pcall(function() rp.RespectCanCollide = true end)
     for _, ang in ipairs({45, -45, 90, -90, 135, -135, 180}) do
       local a = math.rad(ang)
       local dir = Vector3.new(bd.X * math.cos(a) - bd.Z * math.sin(a), 0, bd.X * math.sin(a) + bd.Z * math.cos(a))
@@ -884,6 +1122,14 @@ local function walkCore(dest, maxT, isDrop, owner)
     end
     return bestSpot
   end
+  local function afterHop()
+    repaths = 0
+    r, h = hrp(), hum()
+    lastPos = r and r.Position or lastPos
+    stuckT = 0
+    idx = 2
+    buildPath()
+  end
   buildPath()
   while tick() - t0 < maxT do
     local it = intr(); if it then return it end
@@ -895,29 +1141,24 @@ local function walkCore(dest, maxT, isDrop, owner)
       task.wait(0.06)
       if (r.Position - lastPos).Magnitude < 0.2 then
         stuckT = stuckT + 0.06
-        if stuckT > 0.3 then h.Jump = true end
-        if stuckT > 0.7 and tick() - lastDetour > 1.2 then
+        if stuckT > 0.2 then h.Jump = true end
+        if stuckT > 0.35 and tick() - lastDetour > 1.2 then
           lastDetour = tick()
           local ds = freeDirSpot(6)
-          if ds then h:MoveTo(ds); task.wait(0.25) end
+          if ds then h:MoveTo(ds); task.wait(0.2) end
         end
-        if stuckT > 1.5 then
+        if stuckT >= CFG.HOP_STALL then
           stuckT = 0
-          local nr = tryNudge()
+          local nr = tryHop()
           if nr == "GIVEUP" then return false end
-          if nr then
-            repaths = 0
-            r, h = hrp(), hum()
-            lastPos = r and r.Position or lastPos
-            buildPath(); idx = 2
-            continue
-          end
+          if nr then afterHop() continue end
+          if tick() - lastRepath > 1.2 then lastRepath = tick(); buildPath() end
           repaths = repaths + 1
           local rv = r.CFrame.RightVector
           local sign = (repaths % 2 == 0) and 1 or -1
           h:MoveTo(groundOf(r.Position + Vector3.new(rv.X, 0, rv.Z) * (6 * sign)))
-          task.wait(0.45)
-          if not buildPath() then wpts = nil end
+          task.wait(0.35)
+          if tick() - lastRepath > 1.2 then lastRepath = tick(); if not buildPath() then wpts = nil end end
           idx = 2
         end
       else stuckT = 0 end
@@ -943,7 +1184,7 @@ local function walkCore(dest, maxT, isDrop, owner)
     h:MoveTo(wp.Position)
     local ws = tick()
     local stuckHere = false
-    while tick() - ws < 2.5 and tick() - t0 < maxT do
+    while tick() - ws < 3.0 and tick() - t0 < maxT do
       task.wait(0.04)
       local it2 = intr(); if it2 then return it2 end
       r, h = hrp(), hum(); if not r or not h or not alive() then return false end
@@ -951,36 +1192,31 @@ local function walkCore(dest, maxT, isDrop, owner)
       if flatDist(Vector3.new(r.Position.X, 0, r.Position.Z), Vector3.new(wp.Position.X, 0, wp.Position.Z)) < 3 then break end
       if (r.Position - lastPos).Magnitude < 0.2 then
         stuckT = stuckT + 0.04
-        if stuckT > 0.3 then h.Jump = true end
-        if stuckT > 0.7 and tick() - lastDetour > 1.2 then
+        if stuckT > 0.2 then h.Jump = true end
+        if stuckT > 0.35 and tick() - lastDetour > 1.2 then
           lastDetour = tick()
           local ds = freeDirSpot(6)
           if ds then h:MoveTo(ds); task.wait(0.2) end
         end
-        if stuckT > 1.5 then stuckT = 0; stuckHere = true; break end
+        if stuckT >= CFG.HOP_STALL then stuckT = 0; stuckHere = true; break end
       else stuckT = 0 end
       lastPos = r.Position
     end
     if stuckHere then
       pcall(function() r.AssemblyLinearVelocity = Vector3.zero end)
       h.Jump = true
-      task.wait(0.15)
-      local nr = tryNudge()
+      task.wait(0.1)
+      local nr = tryHop()
       if nr == "GIVEUP" then return false end
-      if nr then
-        repaths = 0; idx = 2
-        r, h = hrp(), hum()
-        lastPos = r and r.Position or lastPos
-        buildPath()
-        continue
-      end
+      if nr then afterHop() continue end
       repaths = repaths + 1
       local rv = r.CFrame.RightVector
       local sign = (repaths % 2 == 0) and 1 or -1
       h:MoveTo(groundOf(r.Position + Vector3.new(rv.X, 0, rv.Z) * (5 * sign)))
-      task.wait(0.4)
-      if not buildPath() then
-        wpts = nil; repaths = 0
+      task.wait(0.35)
+      if tick() - lastRepath > 1.2 then
+        lastRepath = tick()
+        if not buildPath() then wpts = nil; repaths = 0 end
       end
       idx = 2
     else
@@ -1022,21 +1258,30 @@ end
 task.spawn(function()
   local lastPos, lastMoveAt = nil, tick()
   while not _G.StopAutoFarm do
-    task.wait(0.25)
-    local r = hrp()
-    local h = hum()
-    local busy = ST.walking or ST.inProgress or ST.busyCyber or ST.busyDrop
-    local trying = ST.walking or ST.inProgress or (h and h.MoveDirection.Magnitude > 0.1)
-    if r and alive() and busy and trying then
-      if not lastPos or (r.Position - lastPos).Magnitude > 0.6 then
-        lastPos = r.Position; lastMoveAt = tick()
-      elseif tick() - lastMoveAt >= 1.5 then
-        if emergencyNudge(ST.walkDest or ST.goalPos) then
-          lastMoveAt = tick(); lastPos = (hrp() or r).Position
+    task.wait(0.2)
+    -- v7.1f: الحارس يشتغل وقت المشي فقط. كان يعتبر inProgress/busyDrop/busyCyber
+    -- «محاولة مشي» فيقذف اللاعب وهو واقف على اللوحة أو فوق الدروب = خطا المشي.
+    if ST.walking and not ST.busyDrop and not ST.busyCyber then
+      local r = hrp()
+      local h = hum()
+      if r and alive() then
+        if not lastPos or (r.Position - lastPos).Magnitude > 0.6 then
+          lastPos = r.Position; lastMoveAt = tick()
+        elseif tick() - lastMoveAt >= 0.9 then
+          local goal = ST.walkDest or ST.goalPos
+          if goal and not inCaveNoHop(r.Position) then
+            if smartHop(goal, nil, nil) then
+              lastMoveAt = tick(); lastPos = (hrp() or r).Position
+            end
+          end
         end
+      else
+        lastPos = nil; lastMoveAt = tick()
       end
     else
-      lastPos = r and r.Position or nil; lastMoveAt = tick()
+      local r = hrp()
+      lastPos = r and r.Position or nil
+      lastMoveAt = tick()
     end
   end
 end)
@@ -1045,14 +1290,18 @@ end)
 -- مالك واحد ينفّذ + انتقال فوري فوق الدروب + ضغط على برومبت الدروب نفسه. لا مشي للدروب.
 
 -- v7.1: الكويز يُحسب محلول فقط لما الواجهة تختفي فعلياً (عشان لا يعدّ نفسه نجاح كاذب)
-local function solveQuizPass(isSecret)
+local function solveQuizPass(isSecret, isBox)
   local s = scanQuiz()
   local quez, txtBox, applyBtn = getDropPassElements()
-  local raw = quez and cleanText(quez.Text or "") or ""
+  -- v7.1c: نبدأ بالمعادلة المرسلة من السيرفر (AirdropQuizEvent) — أدق من اللقطة من الـ GUI
+  local raw = ""
+  if ST.remoteEq and (tick() - (ST.remoteEqAt or 0) < 30) then raw = cleanText(ST.remoteEq) end
+  if raw == "" then raw = quez and cleanText(quez.Text or "") or "" end
   if raw == "" and s.joined then raw = cleanText(s.joined) end
   if raw == "" then return false end
-  if raw == ST.lastEq then return false end
-  ST.lastEq = raw
+  -- v7.1d: المعادلة نفسها ما تنرفض للأبد — لو النافذة لسه ظاهرة نعاود بعد 2.5 ثانية
+  if raw == ST.lastEq and (tick() - (ST.quizTriedAt or 0) < 2.5) then return false end
+  ST.lastEq = raw; ST.quizTriedAt = tick()
   local ans = parseEq(raw)
   if not ans then local ok, v = pcall(solveStr, raw); if ok and v then ans = v end end
   if not ans then
@@ -1079,7 +1328,9 @@ local function solveQuizPass(isSecret)
   end
   if not gone then ST.lastEq = ""; return false end
   ST.stats.quizzesSolved = ST.stats.quizzesSolved + 1
-  if isSecret then ST.score = ST.score + 1500; ST.stats.dropsSecret = ST.stats.dropsSecret + 1; addLog("✅ السري حل!")
+  if isBox then
+    addLog("✅ كويز فتح الصندوق انحلت")
+  elseif isSecret then ST.score = ST.score + 1500; ST.stats.dropsSecret = ST.stats.dropsSecret + 1; addLog("✅ السري حل!")
   else ST.score = ST.score + 800; ST.stats.dropsNormal = ST.stats.dropsNormal + 1; addLog("✅ العادي حل!") end
   updateStats()
   return true
@@ -1128,56 +1379,60 @@ local function handleDrop(target, kind)
   end
 
   -- 2) الضغط: برومبتات الدروب نفسه أولاً، ثم أي برومبت قريب، مع E ولمس
+  -- v7.1d: مثل النسخة القديمة المثبتة — تثبيت فوق الدروب وجمع البرومبتات القريبة كل محاولة
+  -- (كاش promptSet يتحدّث لحظياً بـ DescendantAdded)، و E مطوّل 0.5 ثانية لأن الـ HoldDuration أطول من ضغطة قصيرة.
   local opened, why = false, "timeout"
   local openT0 = tick()
   local tries = 0
+  local liveCount = 0
   while (tick() - openT0) * 1000 < CFG.DROP_OPEN_MS * 1000 and not _G.StopAutoFarm and ST.autoDrop do
     tries = tries + 1
     if not target.Parent and not part.Parent then opened = true; why = "gone"; break end
     local rr = hrp(); if not rr then why = "no-hrp"; break end
-    if tries % 3 == 1 then
-      pcall(function()
-        rr.CFrame = CFrame.new(groundOf(part.Position))
-        rr.AssemblyLinearVelocity = Vector3.zero
-      end)
-    end
+    pcall(function()
+      rr.CFrame = CFrame.new(groundOf(part.Position))
+      rr.AssemblyLinearVelocity = Vector3.zero
+      rr.AssemblyAngularVelocity = Vector3.zero
+    end)
     for i = 1, #prompts do
       local p = prompts[i]
       if p and p.Parent then activatePrompt(p, tries > 2, 0.8) end
     end
-    if #prompts == 0 or tries > 3 then
-      for _, entry in ipairs(getNearbyPrompts(12)) do
-        local pp = entry.prompt
-        if pp and pp.Parent and not isBlockedPrompt(pp) then activatePrompt(pp, tries > 3, 1.0) end
-      end
+    local live = getNearbyPrompts(15)
+    liveCount = #live
+    for _, entry in ipairs(live) do
+      local pp = entry.prompt
+      if pp and pp.Parent and not isBlockedPrompt(pp) then activatePrompt(pp, tries > 3, 1.0) end
     end
     if isDropPassShown() then opened = true; why = "quiz"; break end
     touchObj(part)
     if isDropPassShown() then opened = true; why = "touch"; break end
     if hasCrate() then opened = true; why = "crate"; break end
-    if tries % 2 == 0 then pressE(0.16) end
+    pressE(0.5)
     if isDropPassShown() then opened = true; why = "E"; break end
-    task.wait(0.08)
+    task.wait(0.12)
   end
-  logMs("DROP_OPEN", openT0, (opened and "zOK" or "zFAIL") .. (" zWhy=%s zTries=%d"):format(why, tries))
+  logMs("DROP_OPEN", openT0, (opened and "zOK" or "zFAIL") .. (" zWhy=%s zTries=%d zLive=%d"):format(why, tries, liveCount))
 
-  -- 3) الكويز
+  -- 3) الكويز — v7.1d: نافذة كاملة دائمًا (النسخة القديمة كانت تراقب 15ث بدون شرط).
+  --    كان ينقطع بعد 2.5 ثانية إذا مرحلة الفتح ما انجحت، فالمعادلة تطلع بعده وما تنحل.
   local t0 = tick(); local solved = false
-  local solveWindow = opened and CFG.QUIZ_TIMEOUT or 2.0
+  local solveWindow = CFG.QUIZ_TIMEOUT
   while (tick() - t0) < solveWindow and not _G.StopAutoFarm and ST.autoDrop do
     if isDropPassShown() then
       local ok, did = pcall(solveQuizPass, isSecret)
       if ok and did then solved = true; break end
       task.wait(0.3)
     else
-      if (not opened) or (tick() - t0 > 2.5) then break end
+      -- نطلع بدري فقط إذا الدروب اختفى فعلًا ومع ذلك ما ظهرت المعادلة 3 ثواني
+      if not target.Parent and not part.Parent and (tick() - t0 > 3) then break end
       task.wait(0.2)
     end
   end
-  if not solved and opened and ST.autoDrop and isDropPassShown() then
+  if not solved and ST.autoDrop and isDropPassShown() then
     ST.pendingQuiz = { secret = isSecret, expiry = tick() + 25 }
     addLog("⏳ الكويز لسه ظاهر — مشغّل متأخر يتولاه")
-  elseif not solved and opened and ST.autoDrop then
+  elseif not solved and ST.autoDrop then
     addLog("انتهى الوقت"); ST.stats.failed = ST.stats.failed + 1
   end
   logMs(solved and "DROP_FULL" or (ST.pendingQuiz and "DROP_PENDING" or "DROP_FAIL"), dropT0, ("zWhy=%s"):format(why))
@@ -1219,6 +1474,21 @@ task.spawn(function()
   while not _G.StopAutoFarm do
     task.wait(0.3)
     if not ST.autoDrop or ST.busyDrop or ST.busyCyber then continue end
+    -- v7.1c: NotiEvent «تم نزول 1 دروب» = إشارة فورية — نكنس الكاش ونبحث مباشرة
+    if (ST.notiDropAt or 0) > (ST.notiDropSeenAt or 0) then
+      ST.notiDropSeenAt = ST.notiDropAt
+      dropCacheClear()
+      task.spawn(function()
+        task.wait(1.2)
+        if _G.StopAutoFarm or not ST.autoDrop or ST.busyDrop then return end
+        local d, k = findActiveDrop(true)
+        if d then requestDrop(d, k, "NotiEvent")
+        elseif tick() - (ST.lastNotiMissLog or 0) > 20 then
+          ST.lastNotiMissLog = tick()
+          addLog("zDROP noti=نزول zWhy=no-object-yet")
+        end
+      end)
+    end
     -- ما نقاطع مرحلة التسليم — كان يمسح المهمة ويخليك واقف
     if ST.missionOn and ST.isPickup == false then continue end
     if hasCrate() then
@@ -1255,11 +1525,21 @@ local function looksLikeDropName(n)
 end
 
 addC(workspace.ChildAdded:Connect(function(c)
-  if _G.StopAutoFarm or not ST.autoDrop or ST.busyDrop then return end
+  if _G.StopAutoFarm then return end
+  -- v7.1f: كاش الدروب صار يخزّن «مافي شي» أيضاً — أي كائن جديد يمسحه فورًا
+  -- حتى لا ينتظر المستخدم 0.35 ثانية قبل ما يبان الدروب
+  if (c:IsA("Model") or c:IsA("BasePart")) and looksLikeDropName(c.Name) then dropCache.at = 0 end
+  if not ST.autoDrop or ST.busyDrop then return end
   if c:IsA("Folder") or not looksLikeDropName(c.Name) then return end
-  addLog(("🆕 %s!"):format(c.Name)); task.wait(0.25)
-  if ST.missionOn and ST.isPickup == false then return end
-  requestDrop(c, classifyDrop(c), "child")
+  addLog(("🆕 %s!"):format(c.Name))
+  -- v7.1c: task.wait ما ينفع داخل ChildAdded — روبلكس يوقف الثريد والخطأ يبلع
+  -- الاكتشاف كله (سبب «الدروب ما ينحل» عند الناس). نشتغل كوروتين مستقل.
+  task.spawn(function()
+    task.wait(0.25)
+    if _G.StopAutoFarm or not ST.autoDrop or ST.busyDrop then return end
+    if ST.missionOn and ST.isPickup == false then return end
+    requestDrop(c, classifyDrop(c), "child")
+  end)
 end))
 
 task.spawn(function()
@@ -1269,9 +1549,14 @@ task.spawn(function()
       if _G.StopAutoFarm or not ST.autoDrop or ST.busyDrop then return end
       if not (c:IsA("Model") or c:IsA("BasePart")) then return end
       if c.Name == "RainDrop" then return end
-      addLog(("🆕 Drops/%s!"):format(c.Name)); task.wait(0.25)
-      if ST.missionOn and ST.isPickup == false then return end
-      requestDrop(c, classifyDrop(c), "drops")
+      dropCache.at = 0
+      addLog(("🆕 Drops/%s!"):format(c.Name))
+      task.spawn(function()
+        task.wait(0.25)
+        if _G.StopAutoFarm or not ST.autoDrop or ST.busyDrop then return end
+        if ST.missionOn and ST.isPickup == false then return end
+        requestDrop(c, classifyDrop(c), "drops")
+      end)
     end))
   end
 end)
@@ -1282,11 +1567,25 @@ task.spawn(function()
     task.wait(0.35)
     local q = ST.pendingQuiz
     if q then
-      if tick() > q.expiry or not ST.autoDrop or not isDropPassShown() then
+      if tick() > q.expiry or not (ST.autoDrop or ST.autoMission) or not isDropPassShown() then
         ST.pendingQuiz = nil
       else
         local ok, did = pcall(solveQuizPass, q.secret)
         if ok and did then ST.pendingQuiz = nil; addLog("✅ الكويز المتأخر انحلت") end
+      end
+    end
+  end
+end)
+
+-- v7.1d: حارس عام للمعادلة — «فتح الصندوق» يستخدم نفس واجهة كويز الدروب، والقديم
+-- كان يحلها من مسار الدروب فقط. أي معادلة ظاهرة والحارس فارغ = تنحل.
+task.spawn(function()
+  task.wait(2.5)
+  while not _G.StopAutoFarm do
+    task.wait(0.5)
+    if (ST.autoDrop or ST.autoMission) and not ST.busyDrop and not ST.handlingDrop and not ST.pendingQuiz then
+      if isDropPassShown() then
+        pcall(solveQuizPass, false, true)
       end
     end
   end
@@ -1527,7 +1826,7 @@ local function lootCyberCave(force)
   ST.cyberSignalAt = 0
   dropCacheClear()
   ST.inProgress = false; ST.progressStart = nil
-  addLog("🌐 الباب انفتح! انتقال فوري لكهف السيبراني...")
+  addLog("🌐 الباب انفتح! نمشي لجوه ونلمّ الـ50 — مشي فقط، بلا انتقال ولا برومبت ولا ريستارت")
   setStatus("كهف السيبراني...", Color3.fromRGB(0, 255, 255))
 
   local c = char(); local r = hrp()
@@ -1537,134 +1836,89 @@ local function lootCyberCave(force)
     return
   end
 
-  local returnPos = r.Position
-  local wasNoclip = ST.noclipOn
-  ST.noclipOn = true
-
   local function endCyberVisit(msg)
     if msg then addLog(msg) end
-    if not _G.StopAutoFarm then
-      local safe, safeFloor = floorAt(returnPos)
-      tpTo(safe or (returnPos + Vector3.new(0, 3, 0)))
-      task.wait(0.3)
-      if not safe or safeFloor == "door" or safeFloor == "win" then
-        tpTo(CFG.SAFE_POS + Vector3.new(0, 3, 0))
-      end
-    end
-    ST.noclipOn = wasNoclip
-    if not wasNoclip then
-      local cc = char()
-      if cc then for _, p in ipairs(cc:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
-      end end
-    end
     ST.busyCyber = false; ST.busyCyberSince = 0; ST.cyberPending = false
     setStatus("خامل", Color3.fromRGB(120,255,200))
   end
 
-  -- 1) الدخول الرسمي: وقفة بره الباب (مو فوقه) وإطلاق برومبته، ثم دخول من فتحة الباب
-  local door, doorPath = findSecurityDoor()
-  local outPos, inPos, outPrompt = cyberDoorAnchors()
-  local stand, standFloor = floorAt(outPos)
-  tpTo(stand or (outPos + Vector3.new(0, 3, 0)))
-  task.wait(0.25)
-  local cps = cyberPromptsNear(30)
-  for _, p in ipairs(cps) do
-    triggerPromptInstantly(p); activatePrompt(p, true, 1.0); pressE(0.12)
-  end
-  if outPrompt then triggerPromptInstantly(outPrompt) end
-  addLog(("zCAVE door=%s prompts=%d stand=%s"):format(
-    tostring(doorPath or "none"), #cps, tostring(standFloor or "none")))
-
+  -- 1) إشارة NotiEvent («تم فتح باب الأمن السيبراني!») هي الفتح الفعلي — نتحقق من
+  --    الجزء briefly ونمشي على أي حال: المشي في باب مقفل ما يضر، والانتظار الطويل يضر
+  local door = findSecurityDoor()
   local ot0 = tick()
-  while not isDoorOpen(door) and (tick() - ot0) < 2.5 and not _G.StopAutoFarm do
-    if outPrompt then triggerPromptInstantly(outPrompt) end
-    pressE(0.1)
-    task.wait(0.25)
+  while door and not isDoorOpen(door) and (tick() - ot0 < CFG.CYBER_DOOR_WAIT) do
+    if _G.StopAutoFarm or (not ST.autoCyber and not force) then return end
+    task.wait(0.5)
+    door = findSecurityDoor() or door
   end
-  local doorOpen = isDoorOpen(door)
+  logMs("CYBER_WAIT", ot0, ("zOpen=%s zDoor=%s"):format(
+    door and tostring(isDoorOpen(door)) or "no-part", tostring(door and door.Name or "none")))
+  addLog("zCAVE walk-only=1")
 
-  -- v7.1b: ما ننزل فوق الزجاج (Door/Win) ولا في فراغ — لو الأرض مو مؤكدة نرجع بدل ما نموت
-  local inStand, inFloor = floorAt(inPos)
-  if not inStand or inFloor == "door" or inFloor == "win" then
-    logMs("CYBER_ENTER", ot0, ("zFAIL zFloor=%s zOpen=%s"):format(tostring(inFloor or "none"), tostring(doorOpen)))
-    endCyberVisit("zCAVE abort: لا أرضية آمنة داخل الكهف — رجعت للخارج")
-    return
-  end
-  tpTo(inStand)
-  task.wait(0.3)
-  local ra = hrp()
-  logMs("CYBER_ENTER", ot0, ("zOK zFloor=%s zOpen=%s zD=%s"):format(
-    tostring(inFloor), tostring(doorOpen),
-    ra and ("%.0f"):format((ra.Position - CFG.CYBER_CAVE_POS).Magnitude) or "?"))
-  addLog("zCAVE entry=through-door")
-
-  -- v7.1b: بعد الدخول نرجّع الكولجن — النوحكلب فوق الزجاج هو اللي يخلّه يغوص ويموت
-  ST.noclipOn = wasNoclip
-  if not wasNoclip then
-    local cc = char()
-    if cc then for _, p in ipairs(cc:GetDescendants()) do
-      if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
-    end end
-  end
-
-  -- 2) داخل الكهف: لمّ الجوائز طول مدة البقاء
+  -- 2) المشي لداخل الكهف: نفس إحداثيات المراقبة — لا برومبت، لا E، لا انتقال
+  local before = getPointsValue() or 0
   local t0 = tick()
+  local got = false
+  local lastCaveLog = 0
+  local lastWalkEnd = 0
   while tick() - t0 < CFG.CYBER_STAY and not _G.StopAutoFarm and (ST.autoCyber or force) do
-    task.wait(0.4)
-    local rp = hrp(); if not rp then break end
-    if (rp.Position - CFG.CYBER_CAVE_POS).Magnitude > 30 then
-      local back, backFloor = floorAt(CFG.CYBER_CAVE_POS)
-      tpTo(back or CFG.CYBER_CAVE_POS)
-      if backFloor == "door" or backFloor == "win" then
-        endCyberVisit("zCAVE exit: وقفت على زجاج — خرجت")
-        return
-      end
-    end
-    local hh = hum()
-    if hh and hh.Health < CFG.CYBER_MIN_HP then
-      logMs("CYBER_CAVE", t0, "zFAIL zWhy=low-hp")
-      endCyberVisit("⚠️ صحتك نازلة داخل الكهف — انسحب فوراً")
+    if not alive() then
+      logMs("CYBER_CAVE", t0, "zFAIL zWhy=died")
+      endCyberVisit("⚠️ انقطعت الصحة داخل الكهف — انسحاب")
       return
     end
-    pcall(function() rp.AssemblyLinearVelocity = Vector3.zero end)
-    pcall(grabCyberLoot)
-  end
-  logMs("CYBER_CAVE", t0)
-
-  if not ST.autoCyber and not force then
-    addLog("⏹️ الكهف: إيقاف فوري")
-    if not _G.StopAutoFarm then tpTo(returnPos + Vector3.new(0, 3, 0)); task.wait(0.3) end
-    ST.noclipOn = wasNoclip
-    if not wasNoclip then
-      local cc = char()
-      if cc then for _, p in ipairs(cc:GetDescendants()) do
-        if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
-      end end
+    -- v7.1f: إذا وصلنا لنقطة الـ50 ما نعاود بناء المسار — كان ينادي ComputeAsync
+    -- كل 0.25 ثانية وهو مكان المشي الصحيح، ويتقاطع مع أي دروب ظاهر
+    local rr = hrp()
+    local far = rr and flatDist(rr.Position, CFG.CYBER_CAVE_POS) or 999
+    if tick() - (lastCaveLog or 0) > 6 then
+      lastCaveLog = tick()
+      addLog(("zCAVE d=%.1f y=%.1f/%.1f pts=%s zWalkEnd=%.0f"):format(far,
+        rr and rr.Position.Y or -1, CFG.CYBER_CAVE_POS.Y, tostring(getPointsValue()), lastWalkEnd))
     end
-    ST.busyCyber = false; ST.busyCyberSince = 0; ST.cyberPending = false
-    setStatus("خامل", Color3.fromRGB(120,255,200))
-    return
+    if far > 2.5 then
+      local wt = tick()
+      local res = walk(CFG.CYBER_CAVE_POS, 10, false, "cyber")
+      lastWalkEnd = math.floor((tick() - wt) * 10) / 10
+      if res == "STOP" or res == "OFF" then
+        logMs("CYBER_CAVE", t0, "zSTOP")
+        endCyberVisit("⏹️ الكهف: إيقاف فوري")
+        return
+      end
+      if res == "DROP" then
+        local d, k = findActiveDrop()
+        if d then
+          logMs("CYBER_CAVE", t0, "zDROP")
+          endCyberVisit("🚨 دروب نازل — نطلع من الكهف ونلحقه")
+          requestDrop(d, k, "كهف")
+          return
+        end
+      end
+    else
+      task.wait(0.4)
+    end
+    local now = getPointsValue()
+    if now and (now - before) >= CFG.CYBER_POINTS then got = true; break end
   end
 
-  ST.stats.cyberPoints = ST.stats.cyberPoints + 50
-  ST.score = ST.score + 50
-  updateStats()
-
-  local didReset = false
-  if not _G.StopAutoFarm then
-    addLog("✅ انتهى وقت الكهف! +50 نقطة")
-    didReset = true
-    cyberResetForPoints()
+  -- 3) النقاط تُقاس من leaderstats.Points — لا ريستارت، نكمل مشي طبيعي
+  if got then
+    ST.stats.cyberPoints = ST.stats.cyberPoints + CFG.CYBER_POINTS
+    ST.score = ST.score + CFG.CYBER_POINTS
+    updateStats()
+    logMs("CYBER_CAVE", t0, ("zOK zWalk zPts=%s"):format(tostring(getPointsValue())))
+    addLog("✅ أخذت الـ50 بالمشي — أكمل طبيعي بدون ريستارت")
+  else
+    logMs("CYBER_CAVE", t0, ("zFAIL zWhy=no-points zBefore=%s zNow=%s"):format(
+      tostring(before), tostring(getPointsValue())))
+    addLog("⚠️ ما سجلت نقاط داخل الكهف — بنعاود بعد الكولداون")
   end
-  task.wait(0.4)
 
-  -- 3) مرحلة الرافعة السيبرانية
-  if CFG.CYBER_USE_LEVER and not _G.StopAutoFarm then
+  -- 4) الرافعة معطّلة: المراقبة ما أظهرت أي رافعة أو برومبت داخل الكهف (نقاط المشي تكفي)
+  if CFG.CYBER_USE_LEVER and got and not _G.StopAutoFarm then
     addLog("🔧 تحرّي الرافعة السيبرانية...")
     setStatus("الرافعة السيبرانية...", Color3.fromRGB(0, 220, 255))
-    tpTo(CFG.CYBER_LEVER)
-    task.wait(0.2)
+    local leverBefore = getPointsValue() or 0
     local t1 = tick()
     local leverTouched = 0
     while tick() - t1 < 6 and not _G.StopAutoFarm and (ST.autoCyber or force) do
@@ -1681,35 +1935,28 @@ local function lootCyberCave(force)
       pressE(leverTouched == 0 and 0.5 or 0.12)
       task.wait(0.06)
     end
-    logMs("CYBER_LEVER", t1, ("zTouch=%d"):format(leverTouched))
-    ST.stats.cyberPoints = ST.stats.cyberPoints + 50
-    ST.score = ST.score + 50
-    updateStats()
-    if not _G.StopAutoFarm then didReset = true; cyberResetForPoints() end
-    task.wait(0.4)
+    local leverAfter = getPointsValue() or 0
+    logMs("CYBER_LEVER", t1, ("zTouch=%d zPts=%s"):format(leverTouched, tostring(leverAfter - leverBefore)))
+    if (leverAfter - leverBefore) > 0 then
+      ST.stats.cyberPoints = ST.stats.cyberPoints + (leverAfter - leverBefore)
+      ST.score = ST.score + (leverAfter - leverBefore)
+      updateStats()
+    end
   end
 
-  -- العودة للموقع ممنوعة بعد الريستارت — هي سبب الرجوع المطاطي
-  if not _G.StopAutoFarm and not didReset then
-    tpTo(returnPos + Vector3.new(0, 3, 0))
-    task.wait(0.4)
-  end
-
-  ST.noclipOn = wasNoclip
-  if not wasNoclip then
-    local cc = char()
-    if cc then for _, p in ipairs(cc:GetDescendants()) do
-      if p:IsA("BasePart") and p.Name ~= "HumanoidRootPart" then p.CanCollide = true end
-    end end
-  end
-
-  ST.busyCyber = false; ST.busyCyberSince = 0; ST.cyberPending = false
-  setStatus("خامل", Color3.fromRGB(120,255,200))
+  endCyberVisit(nil)
 end
 
 local recentMsgs = {}
-local function checkCyberMsg(txt)
+-- v7.1c: المراقبة أظهرت رسالتين — «سيتم فتح ... خلال 30 ثانية» (تحذير، ما ينفع)
+-- و«تم فتح باب الأمن السيبراني!» (الفتح الفعلي). لازم نميّز بينهم.
+local function isDoorWarning(txt)
+  local s = txt or ""
+  return (s:find("خلال") or s:find("خلا")) ~= nil or (s:find("ثانية") or s:find("ثانیه")) ~= nil
+end
+function checkCyberMsg(txt)
   if not txt or type(txt) ~= "string" or txt == "" then return false end
+  if isDoorWarning(txt) then return false end
   if recentMsgs[txt] and (tick() - recentMsgs[txt] < 45) then return false end
   local s = txt:lower()
   local hasDoor = s:find("باب") or s:find("door") or s:find("فتح")
@@ -1744,6 +1991,39 @@ addC(TextChatService.MessageReceived:Connect(function(msg)
     if checkCyberMsg(msg.Text) then cyberSignal("chat") end
   end)
 end))
+-- v7.1c: المراقبة أثبتت أن إشعارات اللعبة تطلع من NotiEvent وهي:
+--   arg1=أيقونة | arg2=Color3 | arg3=نص الرسالة | arg4=Color3 | arg5="Sc"
+--   «تم فتح باب الأمن السيبراني!» = الكهف، «تم نزول 1 دروب! الحقوا سريع» = الدروب
+if REM.NotiEvent then
+  addC(REM.NotiEvent.OnClientEvent:Connect(function(a1, a2, a3, a4, a5)
+    local args = { a1, a2, a3, a4, a5 }
+    pcall(function()
+      if _G.StopAutoFarm then return end
+      for i = 1, #args do
+        local v = args[i]
+        if type(v) == "string" and #v > 5 then
+          if checkCyberMsg(v) then cyberSignal(("NotiEvent: %s"):format(v)) end
+          if ST.autoDrop and not ST.busyDrop and v:find("دروب") and v:find("نزول") then
+            ST.notiDropAt = tick()
+            addLog("zDROP noti=نزول")
+          end
+          if v:find("أتممت") or (v:find("المهمة") and v:find("ختم")) then
+            if ST.weatherActive then
+              ST.weatherActive = false
+              ST.score = ST.score + 30
+              ST.stats.missions = ST.stats.missions + 1
+              updateStats()
+            end
+            addLog("✅ مهمة الأجواء اكتملت (+30)")
+          end
+        end
+      end
+    end)
+  end))
+  addLog("zCYBER src=NotiEvent ✅")
+else
+  addLog("zCYBER warn=NotiEvent-missing (chat-only)")
+end
 task.spawn(function()
   local chats = pl:FindFirstChild("Chats") or pl:WaitForChild("Chats", 15)
   if not chats then return end
@@ -1806,11 +2086,94 @@ task.spawn(function()
   end
 end)
 
+-- ============ v7.1c: مهمة الأجواء — من المراقبة الحقيقية ============
+-- WorldWeatherMissionHUD.Mini يوسّع الكرت، و MissionCard.Action («ابدأ المهمة») يبدأها.
+-- WorldWeatherHUD.SheikhNotice.Acknowledge («تم، وصلت المعلومة») مجرد إشعار. المكافأة +30.
+-- عمدًا ما نستخدم busyWeather: كان يوقف الكهف والمهمة لو الكرت بقي ظاهر.
+local function weatherHud()
+  local hud = pg:FindFirstChild("WorldWeatherMissionHUD")
+  if not hud or hud.Enabled == false then return nil end
+  return hud
+end
+local function isVisible(g)
+  local ok = true
+  pcall(function() ok = g.Visible ~= false and g.Enabled ~= false and g.AbsoluteSize.X > 1 end)
+  return ok
+end
+local function clickWeatherStart()
+  local acted = false
+  pcall(function()
+    local w = pg:FindFirstChild("WorldWeatherHUD")
+    if w then
+      local ack = w:FindFirstChild("SheikhNotice", true)
+      if ack and isVisible(ack) then
+        local b = ack:FindFirstChild("Acknowledge") or ack:FindFirstChildWhichIsA("TextButton", true)
+        if b and isVisible(b) then clickBtn(b); addLog("zWEATHER ack=SheikhNotice") end
+      end
+    end
+    local hud = weatherHud(); if not hud then return end
+    local card = hud:FindFirstChild("MissionCard", true)
+    local action = card and card:FindFirstChild("Action", true)
+    if action and isVisible(action) then
+      if clickBtn(action) then acted = true; addLog("zWEATHER click=MissionCard.Action") end
+    else
+      local mini = hud:FindFirstChild("Mini", true)
+      if mini and isVisible(mini) then
+        clickBtn(mini)
+        addLog("zWEATHER click=Mini (فتح الكرت)")
+      end
+    end
+  end)
+  return acted
+end
+task.spawn(function()
+  while not _G.StopAutoFarm do
+    task.wait(1.0)
+    if ST.autoWeather and not ST.busyDrop and not ST.busyCyber and not ST.handlingDrop then
+      local hud = weatherHud()
+      if hud and (tick() - ST.weatherLastTry >= 20) then
+        ST.weatherLastTry = tick()
+        if clickWeatherStart() then
+          ST.weatherActive = true; ST.weatherStartedAt = tick()
+          addLog("🌦️ مهمة الأجواء: ضغطت البدء — بنكمل الفارم عادي")
+        end
+      end
+    end
+  end
+end)
+
+-- v7.1c: المعادلة توصل من السيرفر مباشرة — AirdropQuizEvent("open", "10 ＋ 5 ＝ ؟", 25)
+-- أدق بكثير من قراءة الـ GUI (سبب «ما يحل الكويز» عند الناس).
+if REM.Quiz then
+  addC(REM.Quiz.OnClientEvent:Connect(function(a1, a2, a3)
+    pcall(function()
+      if a1 == "open" and type(a2) == "string" and #a2 > 2 then
+        ST.remoteEq, ST.remoteEqAt = a2, tick()
+        quizScan.at = -1
+        addLog(("zQUIZ remote=[%s] zTimer=%s"):format(a2, tostring(a3)))
+      elseif a1 == "success" then
+        ST.remoteEq = nil
+        quizScan.at = -1
+      end
+    end)
+  end))
+end
+
 if REM.ShowTarget then
   addC(REM.ShowTarget.OnClientEvent:Connect(function(tp,_,_,cnt,tot,isPick)
     if _G.StopAutoFarm then return end
-    if not tp then ST.missionOn=false; ST.target=nil; ST.cdExpire=tick()+0.3; ST.missionAliveAt=0; addLog("اكتملت المهمة — جاهز للمهمة التالية"); return end
+    if not tp then
+      ST.missionOn=false; ST.target=nil; ST.missionAliveAt=0
+      missionUICache.at = -1
+      markMissionEnd("showtarget-nil")
+      addLog("اكتملت المهمة — كول داون 3 دقائق ثم نبدأ تلقائيًا")
+      return
+    end
     ST.target=tp; ST.isPickup=(isPick==true); ST.boxIndex=cnt or ST.boxIndex; ST.totalBoxes=tot or 5; ST.missionOn=true
+    ST.targetAt = tick(); ST.targetPick = (isPick == true)
+    -- الهدف الجديد = فيه مهمة شغالة: ما يلغي كول داون قائم إلا إذا كانت المهمة راجعة
+    if ST.missionWasOn then ST.cdExpire = 0 end
+    ST.missionWasOn = true
     local pp = tp:IsA("BasePart") and tp or tp:FindFirstChildWhichIsA("BasePart", true)
     addLog(("zTARGET pick=%s box=%s/%s pos=%s"):format(tostring(isPick), tostring(cnt), tostring(tot),
       pp and string.format("%.0f,%.0f,%.0f", pp.Position.X, pp.Position.Y, pp.Position.Z) or "nil"))
@@ -1822,23 +2185,25 @@ if REM.MissionComplete then
   addC(REM.MissionComplete.OnClientEvent:Connect(function()
     if _G.StopAutoFarm then return end
     if ST.missionOn then addLog("zMISSION signal=complete") end
-    ST.missionOn = false; ST.target = nil; ST.cdExpire = tick() + 0.3; ST.missionAliveAt = 0
+    markMissionEnd("signal=complete")
+    ST.missionOn = false; ST.target = nil; ST.missionAliveAt = 0
   end))
 end
 if REM.UpdateProgress then
   addC(REM.UpdateProgress.OnClientEvent:Connect(function(a, b, c)
     if _G.StopAutoFarm then return end
-    ST.missionAliveAt = tick()
+    -- v7.1e: اللقطة الحقيقية: UpdateMissionProgress({{},{},{}}, 1792800000) يجي عند نهاية المهمة
+    -- والرقم طابع وقت مو عدّاد — ما نعتبره «مهمة شغالة» إلا إذا فيه عدّاد صغير فعلي
     local n1, n2
     for _, v in ipairs({a, b, c}) do
-      if type(v) == "number" then
+      if type(v) == "number" and v >= 0 and v < 1000 then
         if not n1 then n1 = v elseif not n2 then n2 = v end
       elseif typeof(v) == "Instance" and (v:IsA("BasePart") or v:IsA("Model")) then
         -- نحدّث الهدف فقط إذا المهمة أصلاً شغالة — وإلا أي جزء عابر يقفل دورة المهام
         if ST.missionOn then ST.target = v end
       end
     end
-    if n1 then ST.boxIndex = n1 end
+    if n1 then ST.boxIndex = n1; ST.missionAliveAt = tick() end
     if n2 then ST.totalBoxes = n2 end
     addLog(("zMISSION signal=progress %s/%s"):format(tostring(n1 or "?"), tostring(n2 or "?")))
   end))
@@ -1878,15 +2243,23 @@ end
 
 -- v7.1b: شارة المهمة تُقرأ من واجهة اللعبة نفسها (BoxMission: «1 / 5» + تخطي).
 -- بدون هذي كان يبدأ مهمة فوق مهمة شغالة ويغرق اللوق بـ MISSION_START zFAIL
-local function isMissionUIActive()
+local missionUICache = {at = -1, on = false}
+local function isMissionUIActive(force)
+  -- v7.1f: كاش 0.25 ثانية — كانت تُنادى كل 0.08 ثانية داخل نافذة قبول المهمة
+  -- وتكنس كل نسل BoxMission بـ pcall لكل واحد (تعليق واضح على الموبايل)
+  if not force and tick() - missionUICache.at < 0.25 then return missionUICache.on end
+  missionUICache.at = tick()
   local g = pg:FindFirstChild("BoxMission")
-  if not g then return false end
+  if not g then missionUICache.on = false; return false end
   local on = false
   pcall(function()
     if g.Enabled == false then return end
     for _, d in ipairs(g:GetDescendants()) do
       local vis = false
-      pcall(function() vis = d.Visible and d.AbsoluteSize.X > 4 and d.AbsoluteSize.Y > 4 end)
+      -- v7.1e: شارة «1 / 5» تبقى Visible لكن أبوها مخفي بعد المهمة — نفحص الآباء كمان
+      if d:IsA("GuiObject") then
+        vis = d.Visible and d.AbsoluteSize.X > 4 and d.AbsoluteSize.Y > 4 and guiShown(d.Parent, g)
+      end
       if vis and (d:IsA("TextLabel") or d:IsA("TextButton")) then
         local t = cleanText(d.Text or "")
         local a, b = t:match("(%d+)%s*/%s*(%d+)")
@@ -1895,6 +2268,7 @@ local function isMissionUIActive()
       end
     end
   end)
+  missionUICache.on = on
   return on
 end
 
@@ -1928,7 +2302,8 @@ local function triggerMissionStart()
       for _, b in ipairs(g:GetDescendants()) do
         if (b:IsA("TextButton") or b:IsA("ImageButton")) and b.Visible then
           local t = ((b:IsA("TextButton") and b.Text or "") .. " " .. b.Name):lower()
-          if t:find("المهام") or t:find("mission") then clickBtn(b); task.wait(0.2); break end
+          -- v7.1e: زر اسمه مثل SkipMission كان ممكن ينضغط هنا ويلغي المهمة الشغالة
+          if (t:find("المهام") or t:find("mission")) and not isNoClickText(t) then clickBtn(b); task.wait(0.2); break end
         end
       end
     end
@@ -1958,14 +2333,32 @@ local function runMissionCycle()
   if carrying then getCrate() end
   local cdLeft = math.ceil(ST.cdExpire - tick())
   ST.goalPos = CFG.BOARD_POS
-  if cdLeft > 0 then
-    setStatus(("كول داون: %ds"):format(cdLeft), Color3.fromRGB(200,200,100))
-    if flatDist(r.Position, CFG.BOARD_POS) > 6 then if handleWalkInterrupt(walk(CFG.BOARD_POS, 8, false, "mission")) then ST.inProgress = false; return end end
-    task.wait(0.3); ST.inProgress = false; return
+  -- v7.1f: احتياطي — ما رجع هدف ولا شارة مهمة بعد آخر تسليم = المهمة خلصت بصمت،
+  -- فنكمل الكول داون 3 دقائق كاملة. اشتغل فقط لأول 30 ثانية بعد التسليم، لأن
+  -- الكول داونات القصيرة (2/5 ثواني لمحاولة فاشلة) ما تعني نهاية مهمة.
+  if cdLeft > 0 and cdLeft < CFG.MISSION_COOLDOWN - 3 and not ST.missionOn
+    and not hasCrate()
+    and (tick() - (ST.lastDeliverAt or -999) > 3) and (tick() - (ST.lastDeliverAt or -999) < 30) then
+    markMissionEnd("deliver-timeout")
+    cdLeft = math.ceil(ST.cdExpire - tick())
+  end
+  -- v7.1e: الكول داون للوحة فقط — إذا السيرفر أعطى هدف الصندوق التالي ما نرجع للوحة بين الصناديق (مثل النسخة القديمة)
+  if cdLeft > 0 and not (ST.missionOn and ST.target and ST.target.Parent) then
+    local mm = math.floor(cdLeft / 60)
+    setStatus(("كول داون: %d:%02d — بدء بعد %ds"):format(mm, cdLeft % 60, cdLeft), Color3.fromRGB(200,200,100))
+    if not ST.cdLogged then ST.cdLogged = true; addLog(("zMISSION cooldown=%ds zWalk=board"):format(cdLeft)) end
+    -- v7.1f: ما نمشي للوحة كل دورة — مرة واحدة إذا فعلاً بعيد، وبعدها وقوف طبيعي
+    -- (المشي المتكرر كل 0.3 ثانية كان يطلع «خطأ بالمشي» ويخلي اللاعب يلف حول نفسه)
+    if flatDist(r.Position, CFG.BOARD_POS) > CFG.BOARD_WALK_MIN
+      and tick() - (ST.lastBoardWalk or 0) > 15 then
+      ST.lastBoardWalk = tick()
+      if handleWalkInterrupt(walk(CFG.BOARD_POS, 14, false, "mission")) then ST.inProgress = false; return end
+    end
+    task.wait(0.5); ST.inProgress = false; return
   end
   if not ST.missionOn then
     -- v7.1b: الواجهة أو إشارة اللعبة تقول إن فيه مهمة شغالة؟ لا نبدأ وحدة فوقها — نتبنّاها وبس
-    if isMissionUIActive() or (tick() - (ST.missionAliveAt or 0) < 20) then
+    if isMissionUIActive() or (tick() - (ST.missionAliveAt or 0) < 20 and tick() > (ST.ghostUntil or 0)) then
       ST.missionOn = true; ST.isPickup = not hasCrate(); ST.startFails = 0
       ST.adoptedAt = tick()
       addLog("zMISSION adopt: المهمة شغالة — بنكمل عليها بدل بدء جديدة")
@@ -2005,7 +2398,7 @@ local function runMissionCycle()
     logMs("MISSION_START", wt, accepted and "zOK" or ("zFAIL zOn=%s zTgt=%s zUI=%s"):format(
       tostring(ST.missionOn), ST.target and "y" or "n", tostring(isMissionUIActive())))
     if not ST.autoMission then ST.inProgress = false; return end
-    if accepted then ST.startFails = 0
+    if accepted then ST.startFails = 0; ST.lastMissionEndAt = 0
     else
       ST.startFails = (ST.startFails or 0) + 1
       if ST.startFails >= 2 then
@@ -2016,8 +2409,22 @@ local function runMissionCycle()
     end
     ST.inProgress = false; return
   end
+  -- v7.1d: حالة الحمل الفعلية هي الحكم، مو علم قديم (مثل النسخة القديمة: ST.isPickup = not hasCrate()).
+  -- هذا يقفل مشكلة «رايح يستلم صندوق وما فيه مهمة» ويمنع المشي للمستودع على فارغ.
+  local carrying = hasCrate()
+  if ST.isPickup == carrying then
+    ST.isPickup = not carrying
+    addLog(("zMISSION fixed isPickup=%s zCarry=%s zOn=%s"):format(tostring(ST.isPickup), tostring(carrying), tostring(ST.missionOn)))
+  end
   local pickupT0 = tick()
   if ST.isPickup then
+    -- v7.1e: «رايح يستلم صندوق وما فيه مهمة»: لا هدف من السيرفر ولا شارة «x / 5» ظاهرة = مهمة وهمية
+    if not (ST.target and ST.target.Parent) and not isMissionUIActive() then
+      addLog(("zMISSION ghost zTgt=n zUI=false zAdopt=%s — لا هدف ولا شارة مهمة، ما نروح المستودع"):format(tostring((ST.adoptedAt or 0) > 0)))
+      ST.missionOn = false; ST.target = nil; ST.adoptedAt = 0; ST.missionAliveAt = 0; ST.pickFails = 0
+      ST.ghostUntil = tick() + 20
+      ST.inProgress = false; return
+    end
     ST.goalPos = CFG.WH_RIGHT
     addLog("التوجه للمستودع"); setStatus("استلام صندوق...", Color3.fromRGB(255,200,100))
     if handleWalkInterrupt(walk(CFG.WH_RIGHT, 14, false, "mission")) then ST.inProgress = false; return end
@@ -2061,12 +2468,20 @@ local function runMissionCycle()
         task.wait(0.08)
       end
       ST.isPickup = false
+      ST.pickFails = 0
       logMs("PICKUP", pickupT0, ("zCrate=%s"):format(crate and crate.Name or "?"))
       addLog(("تم حمل الصندوق (%.1fث)"):format(tick() - pickupT0))
       if not ST.autoMission then ST.inProgress = false; return end
       ST.stats.missions = ST.stats.missions + 1; updateStats()
     else
       logMs("PICKUP_FAIL", pickupT0)
+      -- v7.1e: هدف قديم باقي بالماب (BoxFolder.Zone) بعد ما انتهت المهمة يخليه يلف على المستودع للأبد
+      ST.pickFails = (ST.pickFails or 0) + 1
+      if ST.pickFails >= 3 and not isMissionUIActive() then
+        addLog(("zMISSION ghost: %d pickup fails, no HUD — نوقف المهمة الوهمية"):format(ST.pickFails))
+        ST.pickFails = 0; ST.missionOn = false; ST.target = nil; ST.adoptedAt = 0; ST.missionAliveAt = 0
+        setCdAt(tick() + 2); ST.ghostUntil = tick() + 20
+      end
       task.wait(0.1); ST.inProgress = false; return
     end
   end
@@ -2093,7 +2508,7 @@ local function runMissionCycle()
         ST.missionOn = false
         ST.target = nil
         ST.missionAliveAt = 0
-        ST.cdExpire = tick() + 2
+        setCdAt(tick() + 2)
         addLog("⚠️ الصندوق ما انمسك رغم وجود العلامة — رجوع للمستودع")
       else
         ST.inProgress = false
@@ -2107,7 +2522,7 @@ local function runMissionCycle()
       if tick() - ST.lostTargetAt > 15 then
         ST.lostTargetAt = nil; ST.waitLogged = nil
         addLog("⚠️ هدف التسليم اختفى — إعادة محاولة المهمة")
-        ST.missionOn = false; ST.cdExpire = tick() + 5; ST.missionAliveAt = 0
+        ST.missionOn = false; setCdAt(tick() + 5); ST.missionAliveAt = 0
       elseif tick() - ST.lostTargetAt > 0.7 and not ST.waitLogged then
         ST.waitLogged = true
         addLog("⏳ بانتظار علامة التسليم من اللعبة...")
@@ -2180,14 +2595,22 @@ local function runMissionCycle()
     if not ST.autoMission then ST.inProgress = false; return end
     if delivered or not hasCrate() then
       HardUnstuck()
+      -- v7.1e: السيرفر يرسل هدف الصندوق التالي (ShowTarget Zone) لحظة التسليم — لا نمسحه
+      local nextGiven = ST.target ~= nil and ST.targetPick == true and (ST.targetAt or 0) >= deliverT0
       ST.isPickup = true
-      ST.missionOn = false
-      ST.target = nil
-      ST.missionAliveAt = 0
-      ST.cdExpire = tick() + 0.6
+      ST.lastDeliverAt = tick()
+      if not nextGiven then
+        ST.missionOn = false
+        ST.target = nil
+        ST.missionAliveAt = 0
+        missionUICache.at = -1
+        markMissionEnd("last-box-delivered")
+      else
+        setCdAt(tick() + 0.6)
+      end
       ST.inProgress = false
       ST.progressStart = nil
-      logMs("DELIVER", deliverT0, ("zHold=%s"):format(tostring(didHold)))
+      logMs("DELIVER", deliverT0, ("zHold=%s zNext=%s"):format(tostring(didHold), tostring(nextGiven)))
       addLog(("✅ تم التسليم (%.1fث) — استقرار..."):format(tick() - deliverT0))
       task.wait(0.45)
       HardUnstuck()
@@ -2281,6 +2704,10 @@ local function updateDropESP()
   local myHrp = hrp(); local seen = {}
   local function handleDropObj(obj)
     if not obj or seen[obj] then return end; seen[obj] = true
+    -- v7.1f: قطرات المطر مو دروب — كل واحدة كانت تسوي Highlight و Highlight
+    -- محدود بـ 31 لكل عميل = كشف دروبات ميت + تعليق رسم على الجوال
+    local on = obj.Name
+    if on == "RainDrop" or obj:IsA("Tool") or not looksLikeDropName(on) then return end
     local part = getPart(obj); if not part then return end
     if not espDropHL[obj] or espDropHL[obj].Parent ~= pg then
       if espDropHL[obj] then espDropHL[obj]:Destroy() end
@@ -2299,10 +2726,9 @@ local function updateDropESP()
       if lbl then lbl.Text = ("%s (%.0fm)"):format(isSec and "🏆 دروب سري" or "📦 دروب جوي", dist); lbl.TextColor3 = isSec and Color3.fromRGB(255, 215, 0) or Color3.fromRGB(0, 230, 255) end
     end
   end
-  for _, n in ipairs(CFG.DROP_NAMES) do
-    local obj = workspace:FindFirstChild(n)
-    if obj then if obj:IsA("Folder") then for _, child in ipairs(obj:GetChildren()) do handleDropObj(child) end else handleDropObj(obj) end end
-  end
+  -- v7.1f: ما نكنس مجلدات الأسماء كاملة (RainDrop بالمئات) — نأخذ الدروب النشط فقط
+  local dObj = findActiveDrop()
+  if dObj then handleDropObj(dObj) end
   for obj, _ in pairs(espDropHL) do if not obj.Parent then if espDropHL[obj] then espDropHL[obj]:Destroy(); espDropHL[obj]=nil end; if espDropTags[obj] then espDropTags[obj]:Destroy(); espDropTags[obj]=nil end end end
 end
 task.spawn(function() while not _G.StopAutoFarm do task.wait(0.6); if ST.espPlayers then pcall(updatePlayerESP) end; if ST.espDrops then pcall(updateDropESP) end end end)
@@ -2388,12 +2814,27 @@ local function restoreHumanoid(h)
   end
 end
 
+local lastCuffSweep = 0
+-- v7.1f: كنسة القيود صارت كل 0.35 ثانية وبمرور واحد بدل مرّين كل فريم —
+-- صدّ الكلبشة نفسه لا يزال لحظيًا عبر DescendantAdded (hookCharacterDefense)
 local function runAntiCuff()
+  if tick() - lastCuffSweep < 0.35 then return end
+  lastCuffSweep = tick()
   local c = char(); if not c then return end
   for _, d in ipairs(c:GetDescendants()) do
-    if d:IsA("Weld") or d:IsA("WeldConstraint") or d:IsA("Motor6D") or d:IsA("BodyVelocity") or d:IsA("BodyPosition") then
-      local dn = d.Name:lower()
-      if dn:find("cuff") or dn:find("arrest") or dn:find("handcuff") or dn:find("freeze") or dn:find("taze") or dn:find("كلبش") then pcall(function() d:Destroy() end) end
+    local dn = d.Name
+    if dn then
+      dn = dn:lower()
+      if d:IsA("BasePart") then
+        if d.Anchored then pcall(function() d.Anchored = false end) end
+      elseif d:IsA("ProximityPrompt") then
+        local at = (d.ActionText or "") .. " " .. (d.ObjectText or "")
+        if at:find("كلبشة") or at:find("Arrest") or at:lower():find("cuff") then d.Enabled = false end
+      elseif d:IsA("Weld") or d:IsA("WeldConstraint") or d:IsA("Motor6D") or d:IsA("BodyVelocity") or d:IsA("BodyPosition") then
+        if dn:find("cuff") or dn:find("arrest") or dn:find("handcuff") or dn:find("freeze") or dn:find("taze") or dn:find("كلبش") then
+          pcall(function() d:Destroy() end)
+        end
+      end
     end
   end
   local h = hum()
@@ -2403,10 +2844,6 @@ local function runAntiCuff()
     if h.WalkSpeed < 10 and not ST.handlingDrop then h.WalkSpeed = ST.customSpeedOn and ST.walkSpeed or 16 end
   end
   restoreHumanoid(h)
-  for _, p in ipairs(c:GetDescendants()) do
-    if p:IsA("BasePart") and p.Anchored then pcall(function() p.Anchored = false end) end
-    if p:IsA("ProximityPrompt") then local at = (p.ActionText or "") .. " " .. (p.ObjectText or ""); if at:find("كلبشة") or at:find("Arrest") or at:lower():find("cuff") then p.Enabled = false end end
-  end
 end
 
 local nameHiddenBillboards = {}
@@ -2563,19 +3000,47 @@ addC(pl.CharacterAdded:Connect(function(c)
   ST.lastSafePos = nil
 end))
 
+-- v7.1f: الدرع يُقرأ من كاش البرومبتات (120 متر) بدل كنس كل descendants حق workspace
+-- كل 4 ثانية — الصحة客户端 ما تُرسّل للسيرفر ف Health < 90 يبقى صحيحًا للأبد.
+local function promptLooksLikeArmor(p)
+  local at = ((p.ActionText or "") .. " " .. (p.ObjectText or "") .. " " .. (p.Name or "")):lower()
+  return at:find("armor") ~= nil or at:find("درع") ~= nil
+end
 local function runAutoArmorRefill()
+  if tick() - ST.lastArmorRefill < 8 then return end
   local h = hum(); if not h or h.Health <= 0 then return end
-  if h.Health < 90 and (tick() - ST.lastArmorRefill > 4) then
-    ST.lastArmorRefill = tick()
-    for _, d in ipairs(workspace:GetDescendants()) do
-      if d:IsA("ProximityPrompt") then
-        local at = (d.ActionText or "") .. " " .. (d.ObjectText or "") .. " " .. d.Name
-        if at:lower():find("armor") or at:find("درع") then triggerPromptInstantly(d); addLog("🛡️ تفعيل الدرع التلقائي!"); break end
+  if h.Health >= 90 then return end
+  ST.lastArmorRefill = tick()
+  local r = hrp(); if not r then return end
+  local triggered = 0
+  for _, e in pairs(promptSet) do
+    local p = e.p
+    if p.Parent and p.Enabled ~= false and promptLooksLikeArmor(p) then
+      local host = e.h
+      if host and host.Parent and (host.Position - r.Position).Magnitude < 120 then
+        triggerPromptInstantly(p)
+        triggered = triggered + 1
+        if triggered >= 2 then break end
       end
     end
   end
+  if triggered > 0 then addLog(("🛡️ درع تلقائي: %s"):format(tostring(triggered))) end
 end
-addC(RUN.Heartbeat:Connect(function() if _G.StopAutoFarm then return end; if ST.antiCuff then pcall(runAntiCuff) end; if ST.autoArmorDefense then pcall(runAutoArmorRefill) end; if ST.antiBullet then pcall(runAntiBullet) end end))
+addC(RUN.Heartbeat:Connect(function()
+  if _G.StopAutoFarm then return end
+  -- v7.1f: الحماية كلها بحدّها الأدنى الزمني — Heartbeat على أندرويد 60hz
+  -- وكنس الشخصية/الورلد كل فريم هو اللي يجمّد الجهاز.
+  if ST.antiCuff then pcall(runAntiCuff) end
+  if ST.autoArmorDefense then pcall(runAutoArmorRefill) end
+end))
+task.spawn(function()
+  while not _G.StopAutoFarm do
+    task.wait(0.2)
+    -- v7.1f: مضاد الرصاص انتقل من Heartbeat لتكرار منخفض — شغله الوحيد قراءة صحة
+    -- ونهوض، و HealthChanged事件 يغطّي الإصابة لحظة حدوثها
+    if ST.antiBullet then pcall(runAntiBullet) end
+  end
+end)
 task.spawn(function()
   while not _G.StopAutoFarm do
     task.wait(0.4)
@@ -2611,8 +3076,10 @@ end
 
 local function takeArmor()
   local found = false
-  for _, d in ipairs(workspace:GetDescendants()) do
-    if d:IsA("ProximityPrompt") then local at = (d.ActionText or "") .. " " .. (d.ObjectText or "") .. " " .. d.Name; if at:lower():find("armor") or at:find("درع") then triggerPromptInstantly(d); found = true end end
+  -- v7.1f: كاش البرومبتات بدل كنس كل descendants حق workspace (يجمّد الجوال ثانية)
+  for _, e in pairs(promptSet) do
+    local p = e.p
+    if p.Parent and promptLooksLikeArmor(p) then triggerPromptInstantly(p); found = true end
   end
   addLog(found and "🛡️ تم أخذ الدرع" or "لم يتم العثور على درع")
 end
@@ -2641,7 +3108,13 @@ end
 
 local function toggleOfficeDoors()
   local count = 0
-  for _, pr in ipairs(workspace:GetDescendants()) do if pr:IsA("ProximityPrompt") and pr.Parent and (pr.Parent.Name == "On" or pr.Parent.Name == "Off") then triggerPromptInstantly(pr); count = count + 1 end end
+  -- v7.1f: كاش البرومبتات بدل كنس workspace كامل
+  for _, e in pairs(promptSet) do
+    local p = e.p
+    if p.Parent and p.Enabled ~= false and (p.Parent.Name == "On" or p.Parent.Name == "Off") then
+      triggerPromptInstantly(p); count = count + 1
+    end
+  end
   addLog(("🔓 تم تبديل %d مفتاح"):format(count))
 end
 
@@ -2670,8 +3143,11 @@ addC(RUN.Heartbeat:Connect(function()
   if ST.antiSitOn then local h = hum(); if h then if h.Sit then h.Sit = false end; local st = h:GetState(); if st == Enum.HumanoidStateType.Ragdoll or st == Enum.HumanoidStateType.FallingDown then h:ChangeState(Enum.HumanoidStateType.GettingUp) end end end
 end))
 
-addC(RUN.Heartbeat:Connect(function()
+local hbAcc, noclipAcc, invisAcc = 0, 0, 0
+local appliedFov = -1
+addC(RUN.Heartbeat:Connect(function(dt)
   if _G.StopAutoFarm then return end
+  hbAcc = hbAcc + (dt or 0.016)
   local h, r = hum(), hrp(); if not h or not r or not alive() then return end
   if r.Position.Y < -100 then pcall(function() r.AssemblyLinearVelocity = Vector3.zero; r.AssemblyAngularVelocity = Vector3.zero; char():PivotTo(CFrame.new(CFG.SAFE_POS)) end) end
   if ST.customSpeedOn and not ST.handlingDrop and not ST.flyOn then h.WalkSpeed = ST.walkSpeed end
@@ -2686,12 +3162,37 @@ addC(RUN.Heartbeat:Connect(function()
     if UIS:IsKeyDown(Enum.KeyCode.LeftShift) or mobileFlyDir.Down then mv = mv - Vector3.new(0, 1, 0) end
     flyBV.Velocity = mv.Magnitude > 0 and mv.Unit * ST.flySpeed or Vector3.zero
   end
-  if ST.noclipOn then local c = char(); if c then for _, p in ipairs(c:GetDescendants()) do if p:IsA("BasePart") then p.CanCollide = false end end end end
-  if ST.invisOn then local c = char(); if c then for _, d in ipairs(c:GetDescendants()) do if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 1 then d.Transparency = 1 elseif d:IsA("BillboardGui") and d.Enabled then d.Enabled = false end end end end
-  pcall(function() cam.FieldOfView = ST.fov end)
+  -- v7.1f: نوكليب/اختفاء بحد زمني (20hz / 4hz) بدل كنس descendants كل فريم،
+  -- و FOV ما ينكتب إلا إذا تغيّر فعلًا — كتابة الخاصية كل فريم تجرّ تحديث كاميرا
+  if ST.noclipOn then
+    noclipAcc = noclipAcc + (dt or 0.016)
+    if noclipAcc >= 0.05 then
+      noclipAcc = 0
+      local c = char(); if c then for _, p in ipairs(c:GetChildren()) do if p:IsA("BasePart") then p.CanCollide = false end end end
+    end
+  end
+  if ST.invisOn then
+    invisAcc = invisAcc + (dt or 0.016)
+    if invisAcc >= 0.25 then
+      invisAcc = 0
+      local c = char(); if c then
+        for _, d in ipairs(c:GetDescendants()) do
+          if d:IsA("BasePart") and d.Name ~= "HumanoidRootPart" and d.Transparency < 1 then d.Transparency = 1
+          elseif d:IsA("BillboardGui") and d.Enabled then d.Enabled = false end
+        end
+      end
+    end
+  end
+  if math.abs((ST.fov or 70) - appliedFov) > 0.5 then
+    appliedFov = ST.fov or 70
+    pcall(function() cam.FieldOfView = appliedFov end)
+  end
   if ST.antiFling then local vel = r.AssemblyLinearVelocity; if vel.Magnitude > 120 then r.AssemblyLinearVelocity = Vector3.zero; r.AssemblyAngularVelocity = Vector3.zero end end
-  if ST.busyDrop and ST.busyDropSince > 0 and (tick() - ST.busyDropSince) > 60 then ST.busyDrop = false; ST.handlingDrop = false; ST.dropRequested = false end
-  if ST.busyCyber and ST.busyCyberSince > 0 and (tick() - ST.busyCyberSince) > 45 then ST.busyCyber = false; ST.busyCyberSince = 0 end
+  if hbAcc >= 1 then
+    hbAcc = 0
+    if ST.busyDrop and ST.busyDropSince > 0 and (tick() - ST.busyDropSince) > 60 then ST.busyDrop = false; ST.handlingDrop = false; ST.dropRequested = false end
+    if ST.busyCyber and ST.busyCyberSince > 0 and (tick() - ST.busyCyberSince) > 45 then ST.busyCyber = false; ST.busyCyberSince = 0 end
+  end
 end))
 
 addC(UIS.JumpRequest:Connect(function() if ST.infJumpOn and alive() then local h = hum(); if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end end end))
@@ -2804,7 +3305,13 @@ local function buildGui()
   grad(frame, Color3.fromRGB(16, 22, 36), Color3.fromRGB(9, 12, 20), 90)
   local mStroke = Instance.new("UIStroke", frame); mStroke.Thickness = 1.5; mStroke.Transparency = 0.25
   mStroke.Color = P.stroke
-  addC(RUN.RenderStepped:Connect(function()
+  -- v7.1f: تلوين الإطار كان يتجدد كل فريم (60hz) = إعادة رسم GUI مستمرة على الجوال.
+  -- الحين ~6hz، والمؤثر نفسه باقِ.
+  local strokeAcc = 0
+  addC(RUN.RenderStepped:Connect(function(dt)
+    strokeAcc = strokeAcc + (dt or 0.016)
+    if strokeAcc < 0.16 then return end
+    strokeAcc = 0
     local c = P.cyan:Lerp(P.accent, 0.5 + 0.5 * math.sin(tick() * 0.8))
     mStroke.Color = c:Lerp(P.stroke, 0.45); fStroke.Color = c
   end))
@@ -2813,10 +3320,10 @@ local function buildGui()
   Instance.new("UICorner", header).CornerRadius = UDim.new(0, 16)
   grad(header, Color3.fromRGB(22, 31, 50), Color3.fromRGB(13, 18, 30), 0)
   local title = Instance.new("TextLabel", header); title.Size = UDim2.new(1, -230, 0, 22); title.Position = UDim2.new(0, 16, 0, 7)
-  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1"; title.TextColor3 = P.text
+  title.BackgroundTransparency = 1; title.Text = "AUTOFARM  v7.1f"; title.TextColor3 = P.text
   title.Font = Enum.Font.GothamBold; title.TextSize = 14; title.TextXAlignment = Enum.TextXAlignment.Left
   local subtitle = Instance.new("TextLabel", header); subtitle.Size = UDim2.new(1, -230, 0, 14); subtitle.Position = UDim2.new(0, 16, 0, 26)
-  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Data-Driven • Hard-Unstuck • Double-Confirm"; subtitle.TextColor3 = P.muted
+  subtitle.BackgroundTransparency = 1; subtitle.Text = "LOCAS  •  Data-Driven • Smart 10m Hop • 3-min Cooldown"; subtitle.TextColor3 = P.muted
   subtitle.Font = Enum.Font.Gotham; subtitle.TextSize = 9; subtitle.TextXAlignment = Enum.TextXAlignment.Left
   local helpBtn = Instance.new("TextButton", header); helpBtn.Size = UDim2.new(0, 28, 0, 28); helpBtn.Position = UDim2.new(1, -206, 0, 9)
   helpBtn.BackgroundColor3 = P.row; helpBtn.BackgroundTransparency = 0.15; helpBtn.Text = "؟"
@@ -2932,7 +3439,7 @@ local function buildGui()
   logLbl = Instance.new("TextLabel", scroll); logLbl.Size = UDim2.new(1, -10, 0, 1); logLbl.Position = UDim2.new(0, 6, 0, 6)
   logLbl.AutomaticSize = Enum.AutomaticSize.Y; logLbl.BackgroundTransparency = 1; logLbl.Text = ""; logLbl.TextColor3 = Color3.fromRGB(186, 205, 228); logLbl.Font = Enum.Font.Code; logLbl.TextSize = 12
   logLbl.TextXAlignment = Enum.TextXAlignment.Left; logLbl.TextYAlignment = Enum.TextYAlignment.Top; logLbl.TextWrapped = true
-  local c1b = mkCard(t1, 166, 176)
+  local c1b = mkCard(t1, 198, 176)
   mkToggle(c1b, "المهام", 8, 6, 266, 28, true, function(v)
     ST.autoMission = v
     if not v then
@@ -2979,7 +3486,17 @@ local function buildGui()
     task.spawn(forceDropNow)
   end)
   mkAction(c1b, "⏹ إيقاف السكربت", 286, 134, 266, 28, Color3.fromRGB(132, 40, 52), shutdown)
-  local credit = mkLabel(t1, " youtube.com/@LocasBushee", 0, 344, 560, 26, 11)
+  mkToggle(c1b, "مهمة الأجواء (تلقائي)", 8, 166, 266, 28, false, function(v)
+    ST.autoWeather = v
+    addLog(v and "▶️ مهمة الأجواء: تشغيل — بنضغط زر البدء لما تطلع" or "⏹️ مهمة الأجواء: إيقاف")
+  end)
+  mkAction(c1b, "🌦️ بدء مهمة الأجواء (يدوي)", 286, 166, 266, 28, Color3.fromRGB(48, 86, 120), function()
+    task.spawn(function()
+      if clickWeatherStart() then addLog("🌦️ ضغطت بدء مهمة الأجواء")
+      else addLog("zWEATHER manual: ما لقيت الزر ظاهر") end
+    end)
+  end)
+  local credit = mkLabel(t1, " youtube.com/@LocasBushee", 0, 376, 560, 26, 11)
   credit.TextColor3 = Color3.fromRGB(255, 205, 220)
   credit.TextXAlignment = Enum.TextXAlignment.Center
   credit.BackgroundTransparency = 0.15
@@ -3161,10 +3678,10 @@ local function buildGui()
   end
   refreshRadarPlayerList(); addC(Players.PlayerAdded:Connect(refreshRadarPlayerList)); addC(Players.PlayerRemoving:Connect(refreshRadarPlayerList))
   local blipPool = {}
-  local dropBlips = {}
+  local dropBlips = setmetatable({}, {__mode = "k"})   -- v7.1f: ضعيף = بلا إطارات متراكمة
   task.spawn(function()
     while not _G.StopAutoFarm do
-      task.wait(0.1); if not tabs[4].Visible then continue end
+      task.wait(0.1); if not frame.Visible or not tabs[4].Visible then continue end
       local r = hrp(); if not r then continue end
       local cx, cy = 120, 120; local radarScale = 0.35; local maxRange = 320
       for _, other in ipairs(Players:GetPlayers()) do
@@ -3183,6 +3700,9 @@ local function buildGui()
         end
       end
       local function addDropBlip(obj)
+        -- v7.1f: نفس فلتر الدروب الحقيقي — قطرات المطر كانت تملأ الخريطة بإطارات جديدة
+        local on = obj.Name
+        if on == "RainDrop" or obj:IsA("Tool") or not looksLikeDropName(on) then return end
         local part = getPart(obj); if not part then return end
         local dx = part.Position.X - r.Position.X; local dz = part.Position.Z - r.Position.Z
         local px = math.clamp(cx + (dx * radarScale), 6, 230); local py = math.clamp(cy + (dz * radarScale), 6, 230)
@@ -3190,10 +3710,9 @@ local function buildGui()
         if not dBlip then dBlip = Instance.new("Frame", radarFrame); dBlip.Size = UDim2.new(0, 8, 0, 8); dBlip.BackgroundColor3 = P.gold; Instance.new("UICorner", dBlip).CornerRadius = UDim.new(0, 2); dropBlips[obj] = dBlip end
         dBlip.Position = UDim2.new(0, px - 4, 0, py - 4); dBlip.Visible = true
       end
-      for _, n in ipairs(CFG.DROP_NAMES) do
-        local dropObj = workspace:FindFirstChild(n)
-        if dropObj then if dropObj:IsA("Folder") then for _, ch in ipairs(dropObj:GetChildren()) do addDropBlip(ch) end else addDropBlip(dropObj) end end
-      end
+      local dObj = findActiveDrop()
+      if dObj then addDropBlip(dObj) end
+      for o, fb in pairs(dropBlips) do if not o.Parent then fb:Destroy(); dropBlips[o] = nil end end
     end
   end)
   local t5 = tabs[5]
@@ -3424,14 +3943,18 @@ task.spawn(function() while not _G.StopAutoFarm do
   updateStats()
 end end)
 
-addLog("AUTOFARM v7.1 جاهز 👑")
+addLog("AUTOFARM v7.1f جاهز 👑")
+addLog("✅ كول داون: 3 دقائق بالضبط بعد كل مهمة — بلا بدء مبكر وبلا لخبطة مشي")
+addLog("✅ النقلة الذكية: 10 أمتار للأمام على المسار عند أول تعليق (كانت انتقال كامل للوجهة)")
+addLog("✅ الكهف: مشي فقط + ما يعيد بناء المسار وهو واقف على نقطة الـ50 + منطقة محرمة على النقلة")
+addLog("✅ خفة: كنسات CoreGui/Workspace كلها صارت كاش + أحداث — أندرويد ما يجمّد")
 addLog("✅ الدروب: انتقال فوري فوقه + ضغط برومبته (لا مشي، لا انتظار)")
-addLog("✅ الدروب: منفّذ واحد — اختفت «مقاطعة» المتكررة وإعادة المهمة كل ثانية")
-addLog("✅ الكويز: يقرأ أي لايبل فيه معادلة ويكتب ويجوّل تأكيد ويرمي الريموت")
-addLog("✅ كشف الصندوق: اسم موجب + تعلّم ذاتي")
-addLog("✅ الكهف: لمّ الجوائز + الرافعة + ريستارت ضد المطاطية")
-addLog("📋 تشخيص: zDROP zQUIZ zCRATE zTARGET zTIME zCYBER zCAVE zMISSION")
+addLog("✅ الكويز: يقرأ المعادلة المرسلة من السيرفر + يتتبع مربع الكتابة بدل كنس الواجهات")
+addLog("✅ المهام: ما يروح المستودع إلا بهدف من السيرفر أو شارة مهمة ظاهرة")
+addLog("✅ الكهف: التأكيد من leaderstats.Points (+50) والفتح من NotiEvent")
+addLog("🌦️ مهمة الأجواء: زّر منفصل (مطفية افتراضيًا) وما توقف الكهف ولا الدروب")
+addLog("📋 تشخيص: zMISSION zCD zHOP zDROP zQUIZ zCAVE zTIME zCYBER zWEATHER")
 addLog("جرّب: زر «📦 تجربة الدروب الآن» يطلّع zDROP فورًا")
 addLog("Home = إخفاء/إظهار | End = إيقاف")
 updateStats()
-print("[v7.1] Ready — teleport drops, real E-press, equation-agnostic quiz, UI-verified missions, safe cave entry")
+print("[v7.1f] Ready — exact 180s mission cooldown, smart 10-stud forward hop on slight stall, walk-only cyber cave with hop-free zone, mobile-friendly caches (quiz GUI tracked by TextBox events, negative drop cache, throttled defense/heartbeat sweeps), teleport drops + real E-press")
